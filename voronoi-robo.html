@@ -1,5 +1,7 @@
 <title>Nearest Model — Robo-Advisor Voronoi Map</title>
 <link rel="icon" type="image/x-icon" href="./favicon.ico">
+<script src="./data/regime-data.js"></script>
+<script src="./d3.min.js"></script>
 <style>
   :root {
     --paper: #eef1ef;
@@ -167,6 +169,64 @@
   .tooltip .tt-tag { color: var(--accent); }
   .tooltip.visible { opacity: 1; }
 
+  /* Regime overlay selector */
+  .overlay-panel {
+    background: var(--card-bg);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    box-shadow: var(--shadow);
+    padding: 0.75rem 0.85rem;
+    margin-bottom: 1.25rem;
+  }
+  .overlay-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 0.55rem;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .overlay-head h2 {
+    font-weight: 600;
+    font-size: 0.85rem;
+    letter-spacing: 0.02em;
+    margin: 0;
+  }
+  .overlay-live-note {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    color: var(--ink-soft);
+  }
+  .overlay-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+  .overlay-chip {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    padding: 0.32rem 0.6rem;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--paper);
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+  .overlay-chip:hover { color: var(--ink); border-color: var(--ink-soft); }
+  .overlay-chip.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-ink);
+  }
+  .overlay-chip.is-live::after {
+    content: " ·live";
+    opacity: 0.75;
+  }
+  .overlay-chip:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
   /* Sidebar: portfolio ledger */
   .sidebar {
     display: flex;
@@ -256,10 +316,13 @@
   .explainer {
     margin-top: 2rem;
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, 1fr);
     gap: 2rem;
   }
-  @media (max-width: 780px) {
+  @media (max-width: 980px) {
+    .explainer { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 620px) {
     .explainer { grid-template-columns: 1fr; }
   }
   .explainer h3 {
@@ -311,17 +374,26 @@
   <header class="masthead">
     <div class="eyebrow">Fintech &amp; Geometry — No. 01</div>
     <h1>Every client belongs to whichever model portfolio is closest.</h1>
-    <p class="thesis">
+    <p class="thesis" id="thesis">
       A robo-advisor assigns each client to the nearest of a handful of fixed model
       portfolios in risk/horizon space. Draw that assignment rule as a Voronoi
       tessellation and the boundaries stop being invisible — you can see exactly which
       clients sit on a fence between two portfolios, one small answer away from being
-      reclassified. Mock data, 320 synthetic clients, 6 model portfolios.
+      reclassified. Mock data, 320 synthetic clients, 6 model portfolios — but the
+      regime overlay below is real: it reads today's actual classification from the
+      companion market-regime map.
     </p>
   </header>
 
   <div class="floor">
     <div class="map-panel">
+      <div class="overlay-panel">
+        <div class="overlay-head">
+          <h2>Market regime overlay</h2>
+          <span class="overlay-live-note" id="overlayLiveNote"></span>
+        </div>
+        <div class="overlay-chips" id="overlayChips"></div>
+      </div>
       <div class="map-panel-head">
         <h2>Risk tolerance × time horizon</h2>
         <span class="map-note" id="hoverHint">hover a dot · click a portfolio to isolate</span>
@@ -363,10 +435,20 @@
         drawing its seeds slightly differently.
       </p>
     </div>
+    <div>
+      <h3>The overlay moves the seeds, not the clients</h3>
+      <p>
+        Switching the regime chip shifts every model portfolio's risk coordinate at
+        once — horizon stays put, since that's a client fact, not a market one. No
+        client answers a new question, yet some get reclassified purely because the
+        market moved. The count of who shifted, versus a neutral baseline, is in the
+        ledger below.
+      </p>
+    </div>
   </div>
 
-  <footer>
-    Synthetic data for illustration · Voronoi cells computed by nearest-seed distance over a 900×620 sample grid
+  <footer id="footerNote">
+    Synthetic client data for illustration · Voronoi cells computed as true polygons via d3-delaunay, run locally
   </footer>
 </div>
 
@@ -390,9 +472,54 @@
     { id: 5, name: "Aggressive Growth",     risk: 89, horizon: 20, color: "var(--c6)", cssVar: "--c6",
       alloc: { equity: 90, bond: 0,  cash: 0,  alt: 10 } }
   ];
+  portfolios.forEach(function (p) { p.baseRisk = p.risk; });
 
   var DOMAIN_X = [0, 100];
   var DOMAIN_Y = [0, 36];
+
+  // ---------- regime overlay: reads the *real* classification from the ----------
+  // companion market-regime map (data/regime-data.js + the same 6 seeds it
+  // uses) and lets it shift every portfolio's risk coordinate at once.
+  var REGIME_SEEDS = [
+    { name: "Deep Inversion, Calm",       vix: 13, slope: -0.85 },
+    { name: "Inversion Fading",           vix: 15, slope: -0.30 },
+    { name: "Goldilocks Steepening",      vix: 14, slope:  0.40 },
+    { name: "Elevated Vol, Growth Scare", vix: 22, slope:  0.55 },
+    { name: "Shock Selloff",              vix: 42, slope:  0.50 },
+    { name: "Melt-Up / Ultra Calm",       vix: 12, slope:  0.15 }
+  ];
+  var REGIME_DOMAIN_X = [10, 55], REGIME_DOMAIN_Y = [-1.05, 0.85];
+  function regimeDistSq(x1, y1, x2, y2) {
+    var dx = (x1 - x2) / (REGIME_DOMAIN_X[1] - REGIME_DOMAIN_X[0]);
+    var dy = (y1 - y2) / (REGIME_DOMAIN_Y[1] - REGIME_DOMAIN_Y[0]);
+    return dx * dx + dy * dy;
+  }
+
+  // shift applied to every portfolio's risk coordinate under each regime
+  // (negative = de-risk). "Inversion Fading" is the neutral/baseline regime.
+  var REGIME_OVERLAYS = [
+    { name: "Melt-Up / Ultra Calm",       shift:   6 },
+    { name: "Goldilocks Steepening",      shift:   2 },
+    { name: "Inversion Fading",           shift:   0 },
+    { name: "Elevated Vol, Growth Scare", shift:  -8 },
+    { name: "Deep Inversion, Calm",       shift: -12 },
+    { name: "Shock Selloff",              shift: -20 }
+  ];
+  var NEUTRAL_OVERLAY_IDX = REGIME_OVERLAYS.findIndex(function (o) { return o.shift === 0; });
+
+  var liveRegimeName = null, liveRegimeAsOf = null;
+  if (window.REGIME_DATA && window.REGIME_DATA.days && window.REGIME_DATA.days.length) {
+    var lastDay = window.REGIME_DATA.days[window.REGIME_DATA.days.length - 1];
+    var rd = REGIME_SEEDS.map(function (r) { return regimeDistSq(lastDay.vix, lastDay.slope, r.vix, r.slope); });
+    var rOrder = rd.map(function (v, i) { return i; }).sort(function (a, b) { return rd[a] - rd[b]; });
+    liveRegimeName = REGIME_SEEDS[rOrder[0]].name;
+    liveRegimeAsOf = lastDay.date;
+  }
+  var defaultOverlayIdx = NEUTRAL_OVERLAY_IDX;
+  if (liveRegimeName) {
+    var found = REGIME_OVERLAYS.findIndex(function (o) { return o.name === liveRegimeName; });
+    if (found !== -1) defaultOverlayIdx = found;
+  }
 
   // ---------- seeded RNG so the mock data is stable across renders ----------
   function mulberry32(a) {
@@ -423,26 +550,56 @@
     clients.push({ id: i, risk: risk, horizon: horizon });
   }
 
-  // nearest / second-nearest seed for every client
+  // nearest / second-nearest seed for every client -- rerun whenever the
+  // regime overlay moves the portfolio seeds
   function distSq(x1, y1, x2, y2) {
     // normalize axes so risk (0-100) and horizon (0-36) contribute comparably
     var dx = (x1 - x2) / 100;
     var dy = (y1 - y2) / 36;
     return dx * dx + dy * dy;
   }
-  clients.forEach(function (c) {
-    var d = portfolios.map(function (p) { return distSq(c.risk, c.horizon, p.risk, p.horizon); });
-    var order = d.map(function (v, idx) { return idx; }).sort(function (a, b) { return d[a] - d[b]; });
-    c.cell = order[0];
-    c.nearest = Math.sqrt(d[order[0]]);
-    c.second = Math.sqrt(d[order[1]]);
-    c.contestable = (c.second - c.nearest) < 0.035;
-  });
 
-  var counts = portfolios.map(function (p) {
-    return clients.filter(function (c) { return c.cell === p.id; }).length;
-  });
-  var contestableCount = clients.filter(function (c) { return c.contestable; }).length;
+  var counts, contestableCount, mostContested;
+
+  function reclassifyClients() {
+    clients.forEach(function (c) {
+      var d = portfolios.map(function (p) { return distSq(c.risk, c.horizon, p.risk, p.horizon); });
+      var order = d.map(function (v, idx) { return idx; }).sort(function (a, b) { return d[a] - d[b]; });
+      c.cell = order[0];
+      c.nearest = Math.sqrt(d[order[0]]);
+      c.second = Math.sqrt(d[order[1]]);
+      c.contestable = (c.second - c.nearest) < 0.035;
+    });
+
+    counts = portfolios.map(function (p) {
+      return clients.filter(function (c) { return c.cell === p.id; }).length;
+    });
+    contestableCount = clients.filter(function (c) { return c.contestable; }).length;
+
+    mostContested = (function () {
+      var pairCounts = {};
+      clients.filter(function (c) { return c.contestable; }).forEach(function (c) {
+        var d = portfolios.map(function (p) { return distSq(c.risk, c.horizon, p.risk, p.horizon); });
+        var order = d.map(function (v, idx) { return idx; }).sort(function (a, b) { return d[a] - d[b]; });
+        var key = [order[0], order[1]].sort().join("-");
+        pairCounts[key] = (pairCounts[key] || 0) + 1;
+      });
+      var best = null, bestN = 0;
+      Object.keys(pairCounts).forEach(function (k) {
+        if (pairCounts[k] > bestN) { bestN = pairCounts[k]; best = k; }
+      });
+      if (!best) return "—";
+      var ids = best.split("-").map(Number);
+      return portfolios[ids[0]].name + " / " + portfolios[ids[1]].name;
+    })();
+  }
+
+  // snapshot the neutral-regime assignment before any overlay is applied,
+  // so we can report how many clients an overlay actually moves
+  portfolios.forEach(function (p) { p.risk = p.baseRisk; });
+  reclassifyClients();
+  var neutralCellByClientId = {};
+  clients.forEach(function (c) { neutralCellByClientId[c.id] = c.cell; });
 
   // ---------- canvas setup ----------
   var canvas = document.getElementById("map");
@@ -467,51 +624,44 @@
     return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
   }
 
-  function hexToRgb(hex) {
-    hex = hex.replace('#', '');
-    var n = parseInt(hex, 16);
-    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-  }
-
   var activeCell = null; // null = show all
 
+  // ---------- real Voronoi geometry via d3-delaunay ----------
+  // rebuilt whenever the regime overlay moves the portfolio seeds
+  var delaunay, voronoi;
+  function rebuildVoronoi() {
+    delaunay = d3.Delaunay.from(
+      portfolios,
+      function (p) { return toPx(p.risk, p.horizon)[0]; },
+      function (p) { return toPx(p.risk, p.horizon)[1]; }
+    );
+    voronoi = delaunay.voronoi([PAD.l, PAD.t, PAD.l + plotW, PAD.t + plotH]);
+  }
+  rebuildVoronoi();
+
   function drawVoronoi() {
-    var colors = portfolios.map(function (p) { return hexToRgb(resolveColor(p.cssVar)); });
-    var inkRgb = hexToRgb(resolveColor('--ink'));
-    var img = ctx.createImageData(plotW, plotH);
-    var data = img.data;
-    var step = 1;
-    var edgeBand = 0.016; // normalized-distance half-width of the boundary line
-    for (var py = 0; py < plotH; py += step) {
-      var horizon = DOMAIN_Y[0] + (plotH - py) / plotH * (DOMAIN_Y[1] - DOMAIN_Y[0]);
-      for (var px = 0; px < plotW; px += step) {
-        var risk = DOMAIN_X[0] + px / plotW * (DOMAIN_X[1] - DOMAIN_X[0]);
-        var best = 0, bestD = Infinity, second = Infinity;
-        for (var s = 0; s < portfolios.length; s++) {
-          var p = portfolios[s];
-          var d = distSq(risk, horizon, p.risk, p.horizon);
-          if (d < bestD) { second = bestD; bestD = d; best = s; }
-          else if (d < second) { second = d; }
-        }
-        var margin = Math.sqrt(second) - Math.sqrt(bestD);
-        var onEdge = margin < edgeBand;
-        var dim = (activeCell !== null && activeCell !== best);
-        var idx = (py * plotW + px) * 4;
-        if (onEdge && !dim) {
-          // crisp ink line, darkest right on the seam, fading out across the band
-          var edgeStrength = 1 - (margin / edgeBand);
-          data[idx] = inkRgb[0]; data[idx + 1] = inkRgb[1]; data[idx + 2] = inkRgb[2];
-          data[idx + 3] = Math.round((0.25 + 0.55 * edgeStrength) * 255);
-        } else {
-          var rgb = colors[best];
-          var alpha = dim ? 0.10 : 0.30;
-          data[idx] = rgb[0]; data[idx + 1] = rgb[1]; data[idx + 2] = rgb[2];
-          data[idx + 3] = Math.round(alpha * 255);
-        }
-      }
-    }
     ctx.clearRect(0, 0, W, H);
-    ctx.putImageData(img, PAD.l, PAD.t);
+
+    // cell fills — one true polygon per portfolio, not a pixel raster
+    portfolios.forEach(function (p) {
+      var dim = (activeCell !== null && activeCell !== p.id);
+      ctx.beginPath();
+      voronoi.renderCell(p.id, ctx);
+      ctx.fillStyle = resolveColor(p.cssVar);
+      ctx.globalAlpha = dim ? 0.10 : 0.30;
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+
+    // cell boundaries — the actual Voronoi edge mesh
+    ctx.beginPath();
+    voronoi.render(ctx);
+    ctx.strokeStyle = resolveColor('--ink');
+    ctx.globalAlpha = 0.55;
+    ctx.lineWidth = 1.25;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
     drawAxes();
     drawSeeds();
     drawClients();
@@ -637,89 +787,118 @@
   var cardsEl = document.getElementById("cards");
   var allocKeys = [["equity", "eq"], ["bond", "bd"], ["cash", "ca"], ["alt", "alt"]];
 
-  portfolios.forEach(function (p) {
-    var card = document.createElement("div");
-    card.className = "portfolio-card";
-    card.style.setProperty("--card-accent", "var(" + p.cssVar + ")");
-    card.tabIndex = 0;
-    card.dataset.id = p.id;
+  function renderCards() {
+    cardsEl.innerHTML = "";
+    portfolios.forEach(function (p) {
+      var card = document.createElement("div");
+      card.className = "portfolio-card" +
+        (activeCell === p.id ? " active" : "") +
+        (activeCell !== null && activeCell !== p.id ? " dim" : "");
+      card.style.setProperty("--card-accent", "var(" + p.cssVar + ")");
+      card.tabIndex = 0;
+      card.dataset.id = p.id;
 
-    var barSpans = allocKeys.map(function (k) {
-      var val = p.alloc[k[0]];
-      var shade = { equity: "1", bond: "0.6", cash: "0.35", alt: "0.85" }[k[0]];
-      return '<span style="width:' + val + '%; background: var(' + p.cssVar + '); opacity:' + shade + ';"></span>';
-    }).join("");
+      var barSpans = allocKeys.map(function (k) {
+        var val = p.alloc[k[0]];
+        var shade = { equity: "1", bond: "0.6", cash: "0.35", alt: "0.85" }[k[0]];
+        return '<span style="width:' + val + '%; background: var(' + p.cssVar + '); opacity:' + shade + ';"></span>';
+      }).join("");
 
-    card.innerHTML =
-      '<div class="pc-top"><span class="pc-name">' + p.name + '</span>' +
-      '<span class="pc-count">' + counts[p.id] + ' clients</span></div>' +
-      '<div class="pc-meta">risk ' + p.risk + ' · horizon ' + p.horizon + 'y</div>' +
-      '<div class="alloc-bar">' + barSpans + '</div>' +
-      '<div class="alloc-legend">' +
-        '<span>eq ' + p.alloc.equity + '%</span>' +
-        '<span>bd ' + p.alloc.bond + '%</span>' +
-        '<span>ca ' + p.alloc.cash + '%</span>' +
-        '<span>alt ' + p.alloc.alt + '%</span>' +
-      '</div>';
+      card.innerHTML =
+        '<div class="pc-top"><span class="pc-name">' + p.name + '</span>' +
+        '<span class="pc-count">' + counts[p.id] + ' clients</span></div>' +
+        '<div class="pc-meta">risk ' + p.risk.toFixed(0) + ' (base ' + p.baseRisk + ') · horizon ' + p.horizon + 'y</div>' +
+        '<div class="alloc-bar">' + barSpans + '</div>' +
+        '<div class="alloc-legend">' +
+          '<span>eq ' + p.alloc.equity + '%</span>' +
+          '<span>bd ' + p.alloc.bond + '%</span>' +
+          '<span>ca ' + p.alloc.cash + '%</span>' +
+          '<span>alt ' + p.alloc.alt + '%</span>' +
+        '</div>';
 
-    function toggle() {
-      activeCell = (activeCell === p.id) ? null : p.id;
-      refreshCards();
-      drawVoronoi();
-    }
-    card.addEventListener("click", toggle);
-    card.addEventListener("keydown", function (e) {
-      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
-    });
+      function toggle() {
+        activeCell = (activeCell === p.id) ? null : p.id;
+        renderCards();
+        drawVoronoi();
+      }
+      card.addEventListener("click", toggle);
+      card.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
+      });
 
-    cardsEl.appendChild(card);
-  });
-
-  function refreshCards() {
-    Array.prototype.forEach.call(cardsEl.children, function (el) {
-      var id = parseInt(el.dataset.id, 10);
-      el.classList.toggle("active", activeCell === id);
-      el.classList.toggle("dim", activeCell !== null && activeCell !== id);
+      cardsEl.appendChild(card);
     });
   }
 
   document.getElementById("resetBtn").addEventListener("click", function () {
     activeCell = null;
-    refreshCards();
+    renderCards();
     drawVoronoi();
   });
 
   // ---------- ledger stats ----------
-  var mostContested = (function () {
-    // find the seed pair with the most shared-boundary contestable clients
-    var pairCounts = {};
-    clients.filter(function (c) { return c.contestable; }).forEach(function (c) {
-      var d = portfolios.map(function (p) { return distSq(c.risk, c.horizon, p.risk, p.horizon); });
-      var order = d.map(function (v, idx) { return idx; }).sort(function (a, b) { return d[a] - d[b]; });
-      var key = [order[0], order[1]].sort().join("-");
-      pairCounts[key] = (pairCounts[key] || 0) + 1;
-    });
-    var best = null, bestN = 0;
-    Object.keys(pairCounts).forEach(function (k) {
-      if (pairCounts[k] > bestN) { bestN = pairCounts[k]; best = k; }
-    });
-    if (!best) return "—";
-    var ids = best.split("-").map(Number);
-    return portfolios[ids[0]].name + " / " + portfolios[ids[1]].name;
-  })();
-
   var ledger = document.getElementById("ledger");
-  var ledgerData = [
-    ["clients modeled", N],
-    ["model portfolios", portfolios.length],
-    ["contestable clients", contestableCount + " (" + Math.round(100 * contestableCount / N) + "%)"],
-    ["most contested boundary", mostContested]
-  ];
-  ledgerData.forEach(function (row) {
-    var cell = document.createElement("div");
-    cell.className = "ledger-cell";
-    cell.innerHTML = '<div class="ledger-label">' + row[0] + '</div><div class="ledger-value">' + row[1] + '</div>';
-    ledger.appendChild(cell);
-  });
+  function renderLedger() {
+    ledger.innerHTML = "";
+    var ov = REGIME_OVERLAYS[selectedOverlayIdx];
+    var reassigned = clients.filter(function (c) { return c.cell !== neutralCellByClientId[c.id]; }).length;
+    var ledgerData = [
+      ["regime overlay", ov.name + " (" + (ov.shift > 0 ? "+" : "") + ov.shift + ")"],
+      ["contestable clients", contestableCount + " (" + Math.round(100 * contestableCount / N) + "%)"],
+      ["reassigned vs. neutral", reassigned + " (" + Math.round(100 * reassigned / N) + "%)"],
+      ["most contested boundary", mostContested]
+    ];
+    ledgerData.forEach(function (row) {
+      var cell = document.createElement("div");
+      cell.className = "ledger-cell";
+      cell.innerHTML = '<div class="ledger-label">' + row[0] + '</div><div class="ledger-value">' + row[1] + '</div>';
+      ledger.appendChild(cell);
+    });
+  }
+
+  // ---------- regime overlay chips ----------
+  var overlayChipsEl = document.getElementById("overlayChips");
+  var overlayLiveNoteEl = document.getElementById("overlayLiveNote");
+  var selectedOverlayIdx = defaultOverlayIdx;
+
+  function applyOverlay(idx) {
+    selectedOverlayIdx = idx;
+    var ov = REGIME_OVERLAYS[idx];
+    portfolios.forEach(function (p) { p.risk = clamp(p.baseRisk + ov.shift, 1, 99); });
+    reclassifyClients();
+    rebuildVoronoi();
+    renderOverlayChips();
+    renderCards();
+    renderLedger();
+    drawVoronoi();
+  }
+
+  function renderOverlayChips() {
+    overlayChipsEl.innerHTML = "";
+    REGIME_OVERLAYS.forEach(function (ov, idx) {
+      var chip = document.createElement("button");
+      var isLive = (ov.name === liveRegimeName);
+      chip.className = "overlay-chip" + (idx === selectedOverlayIdx ? " active" : "") + (isLive ? " is-live" : "");
+      chip.type = "button";
+      chip.textContent = ov.name + " (" + (ov.shift > 0 ? "+" : "") + ov.shift + ")";
+      chip.addEventListener("click", function () { applyOverlay(idx); });
+      overlayChipsEl.appendChild(chip);
+    });
+  }
+
+  if (liveRegimeName) {
+    overlayLiveNoteEl.textContent = "today's real regime: " + liveRegimeName + " (as of " + liveRegimeAsOf + ")";
+  } else {
+    overlayLiveNoteEl.textContent = "no live regime data found -- run the regime map's fetch-data.js first";
+  }
+
+  // ---------- data provenance ----------
+  var footerNoteEl = document.getElementById("footerNote");
+  if (liveRegimeName) {
+    footerNoteEl.textContent = "Synthetic client data · regime overlay reads real FRED-derived classification " +
+      "(as of " + liveRegimeAsOf + ") from data/regime-data.js · Voronoi cells computed as true polygons via d3-delaunay";
+  }
+
+  applyOverlay(defaultOverlayIdx);
 })();
 </script>
