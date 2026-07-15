@@ -1,6 +1,7 @@
 // Pulls real VIX and 10Y-2Y curve data from FRED and writes a static JSON
 // file the HTML page can fetch. Run with:
-//   node --env-file=.env fetch-data.js
+//   node --env-file=.env fetch-data.js [yearsBack] [outBasename]
+// e.g. node --env-file=.env fetch-data.js 8 backtest-data
 // (requires Node 20.6+ for --env-file; this repo has been tested on v22)
 
 const API_KEY = process.env.FRED_API_KEY;
@@ -13,7 +14,8 @@ if (!API_KEY) {
 const fs = require("fs");
 const path = require("path");
 
-const YEARS_BACK = 3;
+const YEARS_BACK = Number(process.argv[2]) || 3;
+const OUT_BASENAME = process.argv[3] || "regime-data";
 const start = new Date();
 start.setFullYear(start.getFullYear() - YEARS_BACK);
 const observationStart = start.toISOString().slice(0, 10);
@@ -69,16 +71,17 @@ async function main() {
   const outDir = path.join(__dirname, "data");
   fs.mkdirSync(outDir, { recursive: true });
 
-  const jsonPath = path.join(outDir, "regime-data.json");
+  const jsonPath = path.join(outDir, OUT_BASENAME + ".json");
   fs.writeFileSync(jsonPath, JSON.stringify(payload, null, 2));
 
   // Also emit a plain <script>-includable version. Opening the HTML directly
   // as a file:// URL blocks fetch() of local JSON via CORS in most browsers;
   // a global assigned by a <script src> tag has no such restriction.
-  const jsPath = path.join(outDir, "regime-data.js");
+  const jsPath = path.join(outDir, OUT_BASENAME + ".js");
   fs.writeFileSync(jsPath, "window.REGIME_DATA = " + JSON.stringify(payload) + ";\n");
 
-  console.log("Wrote " + days.length + " daily observations to " + path.relative(__dirname, jsonPath) + " and regime-data.js");
+  console.log("Wrote " + days.length + " daily observations to " + path.relative(__dirname, jsonPath) +
+    " and " + path.relative(__dirname, jsPath));
   console.log("Range: " + days[0].date + " -> " + days[days.length - 1].date);
 }
 
