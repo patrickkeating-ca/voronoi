@@ -1,0 +1,724 @@
+<title>Nearest Model — Robo-Advisor Voronoi Map</title>
+<style>
+  :root {
+    --paper: #eef1ef;
+    --paper-2: #e3e7e4;
+    --ink: #14191b;
+    --ink-soft: #4b5451;
+    --line: #c7cec9;
+    --accent: #1b6b63;
+    --accent-ink: #eef7f5;
+    --card-bg: #f7f8f6;
+    --shadow: 0 1px 0 rgba(20,25,27,0.06);
+
+    --c1: #3c6e8f; /* Capital Preservation */
+    --c2: #4f9188; /* Income & Stability */
+    --c3: #7fa65c; /* Balanced */
+    --c4: #c99a3e; /* Growth (short horizon) */
+    --c5: #cc7a3c; /* Growth (long horizon) */
+    --c6: #b8483f; /* Aggressive Growth */
+
+    --font-display: Georgia, "Iowan Old Style", "Palatino Linotype", "URW Palladio L", serif;
+    --font-body: -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Consolas", monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #12161a;
+      --paper-2: #191f24;
+      --ink: #e9edea;
+      --ink-soft: #9aa6a1;
+      --line: #2b3339;
+      --accent: #4fb3a4;
+      --accent-ink: #0d1a18;
+      --card-bg: #171d21;
+      --shadow: 0 1px 0 rgba(0,0,0,0.4);
+
+      --c1: #6fa2c4; --c2: #6fbdb0; --c3: #a3c47c; --c4: #e0b95c; --c5: #e0955c; --c6: #d4726a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #12161a; --paper-2: #191f24; --ink: #e9edea; --ink-soft: #9aa6a1; --line: #2b3339;
+    --accent: #4fb3a4; --accent-ink: #0d1a18; --card-bg: #171d21; --shadow: 0 1px 0 rgba(0,0,0,0.4);
+    --c1: #6fa2c4; --c2: #6fbdb0; --c3: #a3c47c; --c4: #e0b95c; --c5: #e0955c; --c6: #d4726a;
+  }
+  :root[data-theme="light"] {
+    --paper: #eef1ef; --paper-2: #e3e7e4; --ink: #14191b; --ink-soft: #4b5451; --line: #c7cec9;
+    --accent: #1b6b63; --accent-ink: #eef7f5; --card-bg: #f7f8f6; --shadow: 0 1px 0 rgba(20,25,27,0.06);
+    --c1: #3c6e8f; --c2: #4f9188; --c3: #7fa65c; --c4: #c99a3e; --c5: #cc7a3c; --c6: #b8483f;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  .wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 2.25rem 1.5rem 4rem;
+  }
+
+  /* Masthead */
+  header.masthead {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 1.25rem;
+    margin-bottom: 1.75rem;
+  }
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  h1 {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-style: italic;
+    font-size: clamp(1.6rem, 3vw, 2.15rem);
+    margin: 0;
+    text-wrap: balance;
+    color: var(--ink);
+  }
+  .thesis {
+    max-width: 62ch;
+    color: var(--ink-soft);
+    font-size: 0.95rem;
+  }
+
+  /* Layout */
+  .floor {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: 1.5rem;
+    align-items: start;
+  }
+  @media (max-width: 880px) {
+    .floor { grid-template-columns: 1fr; }
+  }
+
+  .map-panel {
+    background: var(--card-bg);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    box-shadow: var(--shadow);
+    padding: 1rem 1rem 0.75rem;
+  }
+  .map-panel-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 0.5rem;
+    gap: 1rem;
+  }
+  .map-panel-head h2 {
+    font-family: var(--font-body);
+    font-weight: 600;
+    font-size: 0.85rem;
+    letter-spacing: 0.02em;
+    margin: 0;
+    color: var(--ink);
+  }
+  .map-note {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--ink-soft);
+  }
+
+  .canvas-shell {
+    position: relative;
+    width: 100%;
+  }
+  canvas#map {
+    width: 100%;
+    height: auto;
+    display: block;
+    border-radius: 2px;
+    cursor: crosshair;
+  }
+
+  .tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--ink);
+    color: var(--paper);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    padding: 0.5rem 0.6rem;
+    border-radius: 3px;
+    line-height: 1.45;
+    transform: translate(-50%, calc(-100% - 10px));
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.1s ease;
+    z-index: 5;
+  }
+  :root[data-theme="dark"] .tooltip, @media (prefers-color-scheme: dark) { }
+  .tooltip .tt-tag { color: var(--accent); }
+  .tooltip.visible { opacity: 1; }
+
+  /* Sidebar: portfolio ledger */
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+  .sidebar h2 {
+    font-weight: 600;
+    font-size: 0.85rem;
+    letter-spacing: 0.02em;
+    margin: 0 0 0.15rem;
+  }
+  .portfolio-card {
+    background: var(--card-bg);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--card-accent, var(--accent));
+    border-radius: 3px;
+    padding: 0.65rem 0.75rem;
+    cursor: pointer;
+    transition: transform 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease;
+    box-shadow: var(--shadow);
+  }
+  .portfolio-card:hover { transform: translateX(2px); }
+  .portfolio-card.dim { opacity: 0.4; }
+  .portfolio-card.active { box-shadow: 0 0 0 1.5px var(--card-accent, var(--accent)); }
+  .pc-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+  .pc-name { font-weight: 600; font-size: 0.86rem; }
+  .pc-count { font-family: var(--font-mono); font-size: 0.74rem; color: var(--ink-soft); }
+  .pc-meta { font-family: var(--font-mono); font-size: 0.7rem; color: var(--ink-soft); margin: 0.15rem 0 0.4rem; }
+  .alloc-bar {
+    display: flex;
+    height: 6px;
+    border-radius: 3px;
+    overflow: hidden;
+    background: var(--paper-2);
+  }
+  .alloc-bar span { display: block; height: 100%; }
+  .alloc-legend {
+    display: flex;
+    gap: 0.6rem;
+    margin-top: 0.35rem;
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: var(--ink-soft);
+  }
+
+  /* Ledger stats strip */
+  .ledger {
+    margin-top: 1.5rem;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--card-bg);
+  }
+  @media (max-width: 700px) {
+    .ledger { grid-template-columns: repeat(2, 1fr); }
+  }
+  .ledger-cell {
+    padding: 0.85rem 1rem;
+    border-right: 1px solid var(--line);
+  }
+  .ledger-cell:last-child { border-right: none; }
+  .ledger-label {
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    margin-bottom: 0.25rem;
+  }
+  .ledger-value {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 1.25rem;
+    color: var(--ink);
+  }
+  .ledger-value small { font-size: 0.7rem; color: var(--ink-soft); font-weight: 400; }
+
+  /* Explainer */
+  .explainer {
+    margin-top: 2rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+  }
+  @media (max-width: 780px) {
+    .explainer { grid-template-columns: 1fr; }
+  }
+  .explainer h3 {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-weight: 400;
+    font-size: 1.05rem;
+    margin: 0 0 0.4rem;
+  }
+  .explainer p {
+    margin: 0;
+    color: var(--ink-soft);
+    font-size: 0.9rem;
+    max-width: 46ch;
+  }
+
+  footer {
+    margin-top: 2.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--line);
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    color: var(--ink-soft);
+  }
+
+  a, button { font: inherit; }
+  button.reset-btn {
+    background: none;
+    border: 1px solid var(--line);
+    color: var(--ink-soft);
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    padding: 0.25rem 0.55rem;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  button.reset-btn:hover { color: var(--ink); border-color: var(--ink-soft); }
+  button.reset-btn:focus-visible, .portfolio-card:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <div class="eyebrow">Fintech &amp; Geometry — No. 01</div>
+    <h1>Every client belongs to whichever model portfolio is closest.</h1>
+    <p class="thesis">
+      A robo-advisor assigns each client to the nearest of a handful of fixed model
+      portfolios in risk/horizon space. Draw that assignment rule as a Voronoi
+      tessellation and the boundaries stop being invisible — you can see exactly which
+      clients sit on a fence between two portfolios, one small answer away from being
+      reclassified. Mock data, 320 synthetic clients, 6 model portfolios.
+    </p>
+  </header>
+
+  <div class="floor">
+    <div class="map-panel">
+      <div class="map-panel-head">
+        <h2>Risk tolerance × time horizon</h2>
+        <span class="map-note" id="hoverHint">hover a dot · click a portfolio to isolate</span>
+      </div>
+      <div class="canvas-shell">
+        <canvas id="map" width="900" height="620"></canvas>
+        <div class="tooltip" id="tooltip"></div>
+      </div>
+    </div>
+
+    <div class="sidebar">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h2>Model portfolios</h2>
+        <button class="reset-btn" id="resetBtn">show all</button>
+      </div>
+      <div id="cards"></div>
+    </div>
+  </div>
+
+  <div class="ledger" id="ledger"></div>
+
+  <div class="explainer">
+    <div>
+      <h3>The cell is the client segment</h3>
+      <p>
+        Six seed points — the model portfolios — partition the whole plane into regions
+        of nearest neighbor. A new prospect's risk score and horizon land somewhere on
+        the map, and whichever cell contains that point is the portfolio they're
+        assigned. The cell's shape isn't designed, it falls out of the seeds' relative
+        positions.
+      </p>
+    </div>
+    <div>
+      <h3>Boundaries are contestable clients</h3>
+      <p>
+        Dots ringed in white sit nearly equidistant between two seeds — small movements
+        in a risk questionnaire or a horizon update would flip their assignment. That's
+        the client base most exposed to model changes, repricing, or a competitor
+        drawing its seeds slightly differently.
+      </p>
+    </div>
+  </div>
+
+  <footer>
+    Synthetic data for illustration · Voronoi cells computed by nearest-seed distance over a 900×620 sample grid
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------- mock model portfolios (seeds) ----------
+  // x: risk tolerance 0-100, y: time horizon in years 0-36
+  var portfolios = [
+    { id: 0, name: "Capital Preservation", risk: 10, horizon: 6,  color: "var(--c1)", cssVar: "--c1",
+      alloc: { equity: 15, bond: 65, cash: 15, alt: 5 } },
+    { id: 1, name: "Income & Stability",    risk: 24, horizon: 24, color: "var(--c2)", cssVar: "--c2",
+      alloc: { equity: 30, bond: 55, cash: 10, alt: 5 } },
+    { id: 2, name: "Balanced",              risk: 50, horizon: 18, color: "var(--c3)", cssVar: "--c3",
+      alloc: { equity: 55, bond: 35, cash: 5,  alt: 5 } },
+    { id: 3, name: "Growth (short horizon)",risk: 63, horizon: 7,  color: "var(--c4)", cssVar: "--c4",
+      alloc: { equity: 65, bond: 25, cash: 5,  alt: 5 } },
+    { id: 4, name: "Growth (long horizon)", risk: 58, horizon: 32, color: "var(--c5)", cssVar: "--c5",
+      alloc: { equity: 70, bond: 20, cash: 0,  alt: 10 } },
+    { id: 5, name: "Aggressive Growth",     risk: 89, horizon: 20, color: "var(--c6)", cssVar: "--c6",
+      alloc: { equity: 90, bond: 0,  cash: 0,  alt: 10 } }
+  ];
+
+  var DOMAIN_X = [0, 100];
+  var DOMAIN_Y = [0, 36];
+
+  // ---------- seeded RNG so the mock data is stable across renders ----------
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  var rng = mulberry32(20260714);
+  function gauss() {
+    var u = 1 - rng(), v = rng();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+  // ---------- generate mock clients ----------
+  var clients = [];
+  var N = 320;
+  for (var i = 0; i < N; i++) {
+    var home = Math.floor(rng() * portfolios.length);
+    var p = portfolios[home];
+    var spreadR = 14 + rng() * 10;
+    var spreadH = 6 + rng() * 5;
+    var risk = clamp(p.risk + gauss() * spreadR, 1, 99);
+    var horizon = clamp(p.horizon + gauss() * spreadH, 0.5, 35.5);
+    clients.push({ id: i, risk: risk, horizon: horizon });
+  }
+
+  // nearest / second-nearest seed for every client
+  function distSq(x1, y1, x2, y2) {
+    // normalize axes so risk (0-100) and horizon (0-36) contribute comparably
+    var dx = (x1 - x2) / 100;
+    var dy = (y1 - y2) / 36;
+    return dx * dx + dy * dy;
+  }
+  clients.forEach(function (c) {
+    var d = portfolios.map(function (p) { return distSq(c.risk, c.horizon, p.risk, p.horizon); });
+    var order = d.map(function (v, idx) { return idx; }).sort(function (a, b) { return d[a] - d[b]; });
+    c.cell = order[0];
+    c.nearest = Math.sqrt(d[order[0]]);
+    c.second = Math.sqrt(d[order[1]]);
+    c.contestable = (c.second - c.nearest) < 0.035;
+  });
+
+  var counts = portfolios.map(function (p) {
+    return clients.filter(function (c) { return c.cell === p.id; }).length;
+  });
+  var contestableCount = clients.filter(function (c) { return c.contestable; }).length;
+
+  // ---------- canvas setup ----------
+  var canvas = document.getElementById("map");
+  var ctx = canvas.getContext("2d");
+  var W = canvas.width, H = canvas.height;
+  var PAD = { l: 52, r: 18, t: 18, b: 44 };
+  var plotW = W - PAD.l - PAD.r;
+  var plotH = H - PAD.t - PAD.b;
+
+  function toPx(risk, horizon) {
+    var x = PAD.l + (risk - DOMAIN_X[0]) / (DOMAIN_X[1] - DOMAIN_X[0]) * plotW;
+    var y = PAD.t + plotH - (horizon - DOMAIN_Y[0]) / (DOMAIN_Y[1] - DOMAIN_Y[0]) * plotH;
+    return [x, y];
+  }
+  function fromPx(px, py) {
+    var risk = DOMAIN_X[0] + (px - PAD.l) / plotW * (DOMAIN_X[1] - DOMAIN_X[0]);
+    var horizon = DOMAIN_Y[0] + (plotH - (py - PAD.t)) / plotH * (DOMAIN_Y[1] - DOMAIN_Y[0]);
+    return [risk, horizon];
+  }
+
+  function resolveColor(varName) {
+    return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+  }
+
+  function hexToRgb(hex) {
+    hex = hex.replace('#', '');
+    var n = parseInt(hex, 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+
+  var activeCell = null; // null = show all
+
+  function drawVoronoi() {
+    var colors = portfolios.map(function (p) { return hexToRgb(resolveColor(p.cssVar)); });
+    var inkRgb = hexToRgb(resolveColor('--ink'));
+    var img = ctx.createImageData(plotW, plotH);
+    var data = img.data;
+    var step = 1;
+    var edgeBand = 0.016; // normalized-distance half-width of the boundary line
+    for (var py = 0; py < plotH; py += step) {
+      var horizon = DOMAIN_Y[0] + (plotH - py) / plotH * (DOMAIN_Y[1] - DOMAIN_Y[0]);
+      for (var px = 0; px < plotW; px += step) {
+        var risk = DOMAIN_X[0] + px / plotW * (DOMAIN_X[1] - DOMAIN_X[0]);
+        var best = 0, bestD = Infinity, second = Infinity;
+        for (var s = 0; s < portfolios.length; s++) {
+          var p = portfolios[s];
+          var d = distSq(risk, horizon, p.risk, p.horizon);
+          if (d < bestD) { second = bestD; bestD = d; best = s; }
+          else if (d < second) { second = d; }
+        }
+        var margin = Math.sqrt(second) - Math.sqrt(bestD);
+        var onEdge = margin < edgeBand;
+        var dim = (activeCell !== null && activeCell !== best);
+        var idx = (py * plotW + px) * 4;
+        if (onEdge && !dim) {
+          // crisp ink line, darkest right on the seam, fading out across the band
+          var edgeStrength = 1 - (margin / edgeBand);
+          data[idx] = inkRgb[0]; data[idx + 1] = inkRgb[1]; data[idx + 2] = inkRgb[2];
+          data[idx + 3] = Math.round((0.25 + 0.55 * edgeStrength) * 255);
+        } else {
+          var rgb = colors[best];
+          var alpha = dim ? 0.10 : 0.30;
+          data[idx] = rgb[0]; data[idx + 1] = rgb[1]; data[idx + 2] = rgb[2];
+          data[idx + 3] = Math.round(alpha * 255);
+        }
+      }
+    }
+    ctx.clearRect(0, 0, W, H);
+    ctx.putImageData(img, PAD.l, PAD.t);
+    drawAxes();
+    drawSeeds();
+    drawClients();
+  }
+
+  function drawAxes() {
+    var lineColor = resolveColor('--line');
+    var inkSoft = resolveColor('--ink-soft');
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(PAD.l + 0.5, PAD.t + 0.5, plotW, plotH);
+
+    ctx.fillStyle = inkSoft;
+    ctx.font = "11px ui-monospace, SFMono-Regular, Consolas, monospace";
+    ctx.textAlign = "center";
+    var xt = [0, 20, 40, 60, 80, 100];
+    xt.forEach(function (v) {
+      var pt = toPx(v, DOMAIN_Y[0]);
+      ctx.fillText(v, pt[0], PAD.t + plotH + 16);
+    });
+    ctx.textAlign = "right";
+    var yt = [0, 6, 12, 18, 24, 30, 36];
+    yt.forEach(function (v) {
+      var pt = toPx(DOMAIN_X[0], v);
+      ctx.fillText(v, PAD.l - 8, pt[1] + 3);
+    });
+    ctx.textAlign = "center";
+    ctx.fillText("risk tolerance score →", PAD.l + plotW / 2, PAD.t + plotH + 32);
+    ctx.save();
+    ctx.translate(14, PAD.t + plotH / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText("time horizon, years →", 0, 0);
+    ctx.restore();
+  }
+
+  function drawSeeds() {
+    portfolios.forEach(function (p) {
+      var pt = toPx(p.risk, p.horizon);
+      var dim = (activeCell !== null && activeCell !== p.id);
+      ctx.globalAlpha = dim ? 0.3 : 1;
+      ctx.beginPath();
+      ctx.arc(pt[0], pt[1], 7, 0, Math.PI * 2);
+      ctx.fillStyle = resolveColor(p.cssVar);
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = resolveColor('--paper');
+      ctx.stroke();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = resolveColor('--ink');
+      ctx.beginPath();
+      ctx.arc(pt[0], pt[1], 7, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    });
+  }
+
+  function drawClients() {
+    clients.forEach(function (c) {
+      var pt = toPx(c.risk, c.horizon);
+      var p = portfolios[c.cell];
+      var dim = (activeCell !== null && activeCell !== c.cell);
+      ctx.globalAlpha = dim ? 0.12 : 0.9;
+      ctx.beginPath();
+      ctx.arc(pt[0], pt[1], c.contestable ? 3.4 : 2.6, 0, Math.PI * 2);
+      ctx.fillStyle = resolveColor(p.cssVar);
+      ctx.fill();
+      if (c.contestable && !dim) {
+        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = resolveColor('--paper');
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    });
+  }
+
+  drawVoronoi();
+
+  // redraw on theme toggle (data-theme attr changes) and OS scheme change
+  var mo = new MutationObserver(drawVoronoi);
+  mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  if (window.matchMedia) {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', drawVoronoi);
+  }
+
+  // ---------- interaction: hover tooltip ----------
+  var tooltip = document.getElementById("tooltip");
+  var shell = document.querySelector(".canvas-shell");
+
+  function canvasScale() {
+    var rect = canvas.getBoundingClientRect();
+    return { sx: canvas.width / rect.width, sy: canvas.height / rect.height, rect: rect };
+  }
+
+  canvas.addEventListener("mousemove", function (e) {
+    var s = canvasScale();
+    var mx = (e.clientX - s.rect.left) * s.sx;
+    var my = (e.clientY - s.rect.top) * s.sy;
+    var closest = null, closestD = Infinity;
+    clients.forEach(function (c) {
+      var pt = toPx(c.risk, c.horizon);
+      var d = (pt[0] - mx) * (pt[0] - mx) + (pt[1] - my) * (pt[1] - my);
+      if (d < closestD) { closestD = d; closest = c; }
+    });
+    if (closest && closestD < 14 * 14) {
+      var p = portfolios[closest.cell];
+      var pt = toPx(closest.risk, closest.horizon);
+      var rect = canvas.getBoundingClientRect();
+      tooltip.style.left = (pt[0] / s.sx) + "px";
+      tooltip.style.top = (pt[1] / s.sy) + "px";
+      tooltip.innerHTML =
+        "client #" + String(closest.id).padStart(3, "0") + "<br>" +
+        "risk " + closest.risk.toFixed(0) + " · horizon " + closest.horizon.toFixed(1) + "y<br>" +
+        "<span class=\"tt-tag\">→ " + p.name + "</span>" +
+        (closest.contestable ? "<br><span class=\"tt-tag\">contestable</span>" : "");
+      tooltip.classList.add("visible");
+    } else {
+      tooltip.classList.remove("visible");
+    }
+  });
+  canvas.addEventListener("mouseleave", function () { tooltip.classList.remove("visible"); });
+
+  // ---------- sidebar cards ----------
+  var cardsEl = document.getElementById("cards");
+  var allocKeys = [["equity", "eq"], ["bond", "bd"], ["cash", "ca"], ["alt", "alt"]];
+
+  portfolios.forEach(function (p) {
+    var card = document.createElement("div");
+    card.className = "portfolio-card";
+    card.style.setProperty("--card-accent", "var(" + p.cssVar + ")");
+    card.tabIndex = 0;
+    card.dataset.id = p.id;
+
+    var barSpans = allocKeys.map(function (k) {
+      var val = p.alloc[k[0]];
+      var shade = { equity: "1", bond: "0.6", cash: "0.35", alt: "0.85" }[k[0]];
+      return '<span style="width:' + val + '%; background: var(' + p.cssVar + '); opacity:' + shade + ';"></span>';
+    }).join("");
+
+    card.innerHTML =
+      '<div class="pc-top"><span class="pc-name">' + p.name + '</span>' +
+      '<span class="pc-count">' + counts[p.id] + ' clients</span></div>' +
+      '<div class="pc-meta">risk ' + p.risk + ' · horizon ' + p.horizon + 'y</div>' +
+      '<div class="alloc-bar">' + barSpans + '</div>' +
+      '<div class="alloc-legend">' +
+        '<span>eq ' + p.alloc.equity + '%</span>' +
+        '<span>bd ' + p.alloc.bond + '%</span>' +
+        '<span>ca ' + p.alloc.cash + '%</span>' +
+        '<span>alt ' + p.alloc.alt + '%</span>' +
+      '</div>';
+
+    function toggle() {
+      activeCell = (activeCell === p.id) ? null : p.id;
+      refreshCards();
+      drawVoronoi();
+    }
+    card.addEventListener("click", toggle);
+    card.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
+    });
+
+    cardsEl.appendChild(card);
+  });
+
+  function refreshCards() {
+    Array.prototype.forEach.call(cardsEl.children, function (el) {
+      var id = parseInt(el.dataset.id, 10);
+      el.classList.toggle("active", activeCell === id);
+      el.classList.toggle("dim", activeCell !== null && activeCell !== id);
+    });
+  }
+
+  document.getElementById("resetBtn").addEventListener("click", function () {
+    activeCell = null;
+    refreshCards();
+    drawVoronoi();
+  });
+
+  // ---------- ledger stats ----------
+  var mostContested = (function () {
+    // find the seed pair with the most shared-boundary contestable clients
+    var pairCounts = {};
+    clients.filter(function (c) { return c.contestable; }).forEach(function (c) {
+      var d = portfolios.map(function (p) { return distSq(c.risk, c.horizon, p.risk, p.horizon); });
+      var order = d.map(function (v, idx) { return idx; }).sort(function (a, b) { return d[a] - d[b]; });
+      var key = [order[0], order[1]].sort().join("-");
+      pairCounts[key] = (pairCounts[key] || 0) + 1;
+    });
+    var best = null, bestN = 0;
+    Object.keys(pairCounts).forEach(function (k) {
+      if (pairCounts[k] > bestN) { bestN = pairCounts[k]; best = k; }
+    });
+    if (!best) return "—";
+    var ids = best.split("-").map(Number);
+    return portfolios[ids[0]].name + " / " + portfolios[ids[1]].name;
+  })();
+
+  var ledger = document.getElementById("ledger");
+  var ledgerData = [
+    ["clients modeled", N],
+    ["model portfolios", portfolios.length],
+    ["contestable clients", contestableCount + " (" + Math.round(100 * contestableCount / N) + "%)"],
+    ["most contested boundary", mostContested]
+  ];
+  ledgerData.forEach(function (row) {
+    var cell = document.createElement("div");
+    cell.className = "ledger-cell";
+    cell.innerHTML = '<div class="ledger-label">' + row[0] + '</div><div class="ledger-value">' + row[1] + '</div>';
+    ledger.appendChild(cell);
+  });
+})();
+</script>

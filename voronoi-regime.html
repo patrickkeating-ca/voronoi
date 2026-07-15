@@ -1,0 +1,805 @@
+<title>Nearest Regime — Market Scenario Voronoi Map</title>
+<style>
+  :root {
+    --paper: #eef1ef;
+    --paper-2: #e3e7e4;
+    --ink: #14191b;
+    --ink-soft: #4b5451;
+    --line: #c7cec9;
+    --accent: #1b6b63;
+    --accent-ink: #eef7f5;
+    --card-bg: #f7f8f6;
+    --shadow: 0 1px 0 rgba(20,25,27,0.06);
+
+    --c1: #3c6e8f; /* Goldilocks */
+    --c2: #4f9188; /* Melt-Up / Euphoria */
+    --c3: #7fa65c; /* Reflation */
+    --c4: #c99a3e; /* Curve Inversion Warning */
+    --c5: #cc7a3c; /* Risk-Off Selloff */
+    --c6: #b8483f; /* Stagflation Scare */
+
+    --font-display: Georgia, "Iowan Old Style", "Palatino Linotype", "URW Palladio L", serif;
+    --font-body: -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Consolas", monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #12161a;
+      --paper-2: #191f24;
+      --ink: #e9edea;
+      --ink-soft: #9aa6a1;
+      --line: #2b3339;
+      --accent: #4fb3a4;
+      --accent-ink: #0d1a18;
+      --card-bg: #171d21;
+      --shadow: 0 1px 0 rgba(0,0,0,0.4);
+
+      --c1: #6fa2c4; --c2: #6fbdb0; --c3: #a3c47c; --c4: #e0b95c; --c5: #e0955c; --c6: #d4726a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #12161a; --paper-2: #191f24; --ink: #e9edea; --ink-soft: #9aa6a1; --line: #2b3339;
+    --accent: #4fb3a4; --accent-ink: #0d1a18; --card-bg: #171d21; --shadow: 0 1px 0 rgba(0,0,0,0.4);
+    --c1: #6fa2c4; --c2: #6fbdb0; --c3: #a3c47c; --c4: #e0b95c; --c5: #e0955c; --c6: #d4726a;
+  }
+  :root[data-theme="light"] {
+    --paper: #eef1ef; --paper-2: #e3e7e4; --ink: #14191b; --ink-soft: #4b5451; --line: #c7cec9;
+    --accent: #1b6b63; --accent-ink: #eef7f5; --card-bg: #f7f8f6; --shadow: 0 1px 0 rgba(20,25,27,0.06);
+    --c1: #3c6e8f; --c2: #4f9188; --c3: #7fa65c; --c4: #c99a3e; --c5: #cc7a3c; --c6: #b8483f;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  .wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 2.25rem 1.5rem 4rem;
+  }
+
+  header.masthead {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 1.25rem;
+    margin-bottom: 1.75rem;
+  }
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  h1 {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-style: italic;
+    font-size: clamp(1.6rem, 3vw, 2.15rem);
+    margin: 0;
+    text-wrap: balance;
+    color: var(--ink);
+  }
+  .thesis {
+    max-width: 62ch;
+    color: var(--ink-soft);
+    font-size: 0.95rem;
+  }
+
+  .floor {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: 1.5rem;
+    align-items: start;
+  }
+  @media (max-width: 880px) {
+    .floor { grid-template-columns: 1fr; }
+  }
+
+  .map-panel {
+    background: var(--card-bg);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    box-shadow: var(--shadow);
+    padding: 1rem 1rem 0.75rem;
+  }
+  .map-panel-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 0.5rem;
+    gap: 1rem;
+  }
+  .map-panel-head h2 {
+    font-family: var(--font-body);
+    font-weight: 600;
+    font-size: 0.85rem;
+    letter-spacing: 0.02em;
+    margin: 0;
+    color: var(--ink);
+  }
+  .map-note {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--ink-soft);
+  }
+
+  .canvas-shell {
+    position: relative;
+    width: 100%;
+  }
+  canvas#map {
+    width: 100%;
+    height: auto;
+    display: block;
+    border-radius: 2px;
+    cursor: crosshair;
+  }
+
+  .tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--ink);
+    color: var(--paper);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    padding: 0.5rem 0.6rem;
+    border-radius: 3px;
+    line-height: 1.45;
+    transform: translate(-50%, calc(-100% - 10px));
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.1s ease;
+    z-index: 5;
+  }
+  .tooltip .tt-tag { color: var(--accent); }
+  .tooltip.visible { opacity: 1; }
+
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+  .sidebar h2 {
+    font-weight: 600;
+    font-size: 0.85rem;
+    letter-spacing: 0.02em;
+    margin: 0 0 0.15rem;
+  }
+  .portfolio-card {
+    background: var(--card-bg);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--card-accent, var(--accent));
+    border-radius: 3px;
+    padding: 0.65rem 0.75rem;
+    cursor: pointer;
+    transition: transform 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease;
+    box-shadow: var(--shadow);
+  }
+  .portfolio-card:hover { transform: translateX(2px); }
+  .portfolio-card.dim { opacity: 0.4; }
+  .portfolio-card.active { box-shadow: 0 0 0 1.5px var(--card-accent, var(--accent)); }
+  .portfolio-card.is-current { box-shadow: 0 0 0 1.5px var(--card-accent, var(--accent)); }
+  .pc-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+  .pc-name { font-weight: 600; font-size: 0.86rem; }
+  .pc-current-tag {
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--card-accent, var(--accent));
+  }
+  .pc-count { font-family: var(--font-mono); font-size: 0.74rem; color: var(--ink-soft); }
+  .pc-meta { font-family: var(--font-mono); font-size: 0.7rem; color: var(--ink-soft); margin: 0.15rem 0 0.4rem; }
+  .alloc-bar {
+    display: flex;
+    height: 6px;
+    border-radius: 3px;
+    overflow: hidden;
+    background: var(--paper-2);
+  }
+  .alloc-bar span { display: block; height: 100%; }
+  .alloc-legend {
+    display: flex;
+    gap: 0.55rem;
+    margin-top: 0.35rem;
+    font-family: var(--font-mono);
+    font-size: 0.63rem;
+    color: var(--ink-soft);
+    flex-wrap: wrap;
+  }
+
+  .ledger {
+    margin-top: 1.5rem;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--card-bg);
+  }
+  @media (max-width: 700px) {
+    .ledger { grid-template-columns: repeat(2, 1fr); }
+  }
+  .ledger-cell {
+    padding: 0.85rem 1rem;
+    border-right: 1px solid var(--line);
+  }
+  .ledger-cell:last-child { border-right: none; }
+  .ledger-label {
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    margin-bottom: 0.25rem;
+  }
+  .ledger-value {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 1.25rem;
+    color: var(--ink);
+  }
+  .ledger-value small { font-size: 0.7rem; color: var(--ink-soft); font-weight: 400; }
+
+  .explainer {
+    margin-top: 2rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+  }
+  @media (max-width: 780px) {
+    .explainer { grid-template-columns: 1fr; }
+  }
+  .explainer h3 {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-weight: 400;
+    font-size: 1.05rem;
+    margin: 0 0 0.4rem;
+  }
+  .explainer p {
+    margin: 0;
+    color: var(--ink-soft);
+    font-size: 0.9rem;
+    max-width: 46ch;
+  }
+
+  footer {
+    margin-top: 2.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--line);
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    color: var(--ink-soft);
+  }
+
+  a, button { font: inherit; }
+  button.reset-btn {
+    background: none;
+    border: 1px solid var(--line);
+    color: var(--ink-soft);
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    padding: 0.25rem 0.55rem;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  button.reset-btn:hover { color: var(--ink); border-color: var(--ink-soft); }
+  button.reset-btn:focus-visible, .portfolio-card:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <div class="eyebrow">Fintech &amp; Geometry — No. 02</div>
+    <h1>Today's market sits in whichever regime it's closest to.</h1>
+    <p class="thesis">
+      Characterize each historical market regime by two coordinates — equity
+      volatility and the shape of the yield curve — and a day's readings can be
+      classified by nearest neighbor, the same rule a robo-advisor uses to sort
+      clients into model portfolios. The Voronoi cells are the regimes; the trail is
+      where the market has actually walked to get to today. Mock data, ~2.7 years of
+      synthetic daily observations, 6 regimes.
+    </p>
+  </header>
+
+  <div class="floor">
+    <div class="map-panel">
+      <div class="map-panel-head">
+        <h2>VIX level × 10Y–2Y curve slope</h2>
+        <span class="map-note" id="hoverHint">hover a day · click a regime to isolate</span>
+      </div>
+      <div class="canvas-shell">
+        <canvas id="map" width="900" height="620"></canvas>
+        <div class="tooltip" id="tooltip"></div>
+      </div>
+    </div>
+
+    <div class="sidebar">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h2>Regimes &amp; tilts</h2>
+        <button class="reset-btn" id="resetBtn">show all</button>
+      </div>
+      <div id="cards"></div>
+    </div>
+  </div>
+
+  <div class="ledger" id="ledger"></div>
+
+  <div class="explainer">
+    <div>
+      <h3>The trail is the story</h3>
+      <p>
+        Each dot is one trading day, plotted by realized volatility and curve slope
+        and colored by the regime it's nearest to. Connect them in order and you get
+        a path — long loops sitting inside one cell are a regime holding; a path that
+        crosses a boundary and doubles back is a false alarm the market shrugged off.
+      </p>
+    </div>
+    <div>
+      <h3>Today is a classification, not a label</h3>
+      <p>
+        The starred point is the most recent day. It didn't arrive with a regime name
+        attached — it's simply nearest to one seed's coordinates. If it's sitting
+        close to a boundary, the "current regime" call is fragile: a modest VIX print
+        or a few basis points of curve steepening is enough to flip it.
+      </p>
+    </div>
+  </div>
+
+  <footer>
+    Synthetic data for illustration · Voronoi cells computed as true polygons via d3-delaunay, run locally
+  </footer>
+</div>
+
+<script src="./d3.min.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  // ---------- mock regimes (seeds) ----------
+  // x: VIX level, y: 10Y-2Y yield curve slope (%)
+  var regimes = [
+    { id: 0, name: "Goldilocks",             vix: 13, slope:  1.2, color: "var(--c1)", cssVar: "--c1",
+      tilt: { equity: 65, bond: 20, gold: 5,  cash: 10 } },
+    { id: 1, name: "Melt-Up / Euphoria",      vix: 11, slope:  0.3, color: "var(--c2)", cssVar: "--c2",
+      tilt: { equity: 80, bond: 10, gold: 0,  cash: 10 } },
+    { id: 2, name: "Reflation",               vix: 19, slope:  1.8, color: "var(--c3)", cssVar: "--c3",
+      tilt: { equity: 55, bond: 15, gold: 10, cash: 20 } },
+    { id: 3, name: "Curve Inversion Warning", vix: 23, slope: -0.6, color: "var(--c4)", cssVar: "--c4",
+      tilt: { equity: 40, bond: 35, gold: 10, cash: 15 } },
+    { id: 4, name: "Risk-Off Selloff",        vix: 35, slope: -1.0, color: "var(--c5)", cssVar: "--c5",
+      tilt: { equity: 20, bond: 40, gold: 20, cash: 20 } },
+    { id: 5, name: "Stagflation Scare",       vix: 40, slope: -0.1, color: "var(--c6)", cssVar: "--c6",
+      tilt: { equity: 15, bond: 20, gold: 35, cash: 30 } }
+  ];
+
+  var DOMAIN_X = [9, 45];   // VIX
+  var DOMAIN_Y = [-1.6, 2.2]; // curve slope %
+
+  // ---------- seeded RNG for stable mock data ----------
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  var rng = mulberry32(20260714);
+  function gauss() {
+    var u = 1 - rng(), v = rng();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+  // ---------- build a synthetic daily walk through regime-space ----------
+  // Phases: [regimeId, tradingDayCount] — the "true" narrative path the market took.
+  var phases = [
+    [0, 130], [2, 70], [3, 90], [4, 55], [5, 45], [0, 150], [1, 90], [3, 60]
+  ];
+  var rawX = [], rawY = [];
+  phases.forEach(function (ph) {
+    var r = regimes[ph[0]];
+    for (var i = 0; i < ph[1]; i++) {
+      rawX.push(r.vix + gauss() * 2.4);
+      rawY.push(r.slope + gauss() * 0.22);
+    }
+  });
+  // smooth with a moving average so transitions between phases are a walked
+  // path rather than a teleport
+  var WIN = 9;
+  var days = [];
+  for (var i = 0; i < rawX.length; i++) {
+    var lo = Math.max(0, i - WIN), hi = Math.min(rawX.length, i + WIN + 1);
+    var sx = 0, sy = 0, n = 0;
+    for (var j = lo; j < hi; j++) { sx += rawX[j]; sy += rawY[j]; n++; }
+    days.push({
+      vix: clamp(sx / n, DOMAIN_X[0], DOMAIN_X[1]),
+      slope: clamp(sy / n, DOMAIN_Y[0], DOMAIN_Y[1])
+    });
+  }
+
+  // synthetic trading-day dates ending "today"
+  var TODAY = new Date(2026, 6, 14); // 2026-07-14
+  var dates = new Array(days.length);
+  var cursor = new Date(TODAY);
+  for (var k = days.length - 1; k >= 0; k--) {
+    dates[k] = new Date(cursor);
+    do { cursor.setDate(cursor.getDate() - 1); } while (cursor.getDay() === 0 || cursor.getDay() === 6);
+  }
+  function fmtDate(d) {
+    var m = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()];
+    return m + " " + d.getDate() + ", " + d.getFullYear();
+  }
+
+  // ---------- nearest / second-nearest regime for every day ----------
+  function distSq(x1, y1, x2, y2) {
+    var dx = (x1 - x2) / (DOMAIN_X[1] - DOMAIN_X[0]);
+    var dy = (y1 - y2) / (DOMAIN_Y[1] - DOMAIN_Y[0]);
+    return dx * dx + dy * dy;
+  }
+  days.forEach(function (c, idx) {
+    var d = regimes.map(function (r) { return distSq(c.vix, c.slope, r.vix, r.slope); });
+    var order = d.map(function (v, i2) { return i2; }).sort(function (a, b) { return d[a] - d[b]; });
+    c.cell = order[0];
+    c.nearest = Math.sqrt(d[order[0]]);
+    c.second = Math.sqrt(d[order[1]]);
+    c.contestable = (c.second - c.nearest) < 0.05;
+    c.date = dates[idx];
+  });
+
+  var counts = regimes.map(function (r) {
+    return days.filter(function (c) { return c.cell === r.id; }).length;
+  });
+  var contestableCount = days.filter(function (c) { return c.contestable; }).length;
+
+  var todayIdx = days.length - 1;
+  var currentRegime = days[todayIdx].cell;
+  var daysSinceChange = 1;
+  for (var b = todayIdx - 1; b >= 0 && days[b].cell === currentRegime; b--) daysSinceChange++;
+
+  // ---------- canvas setup ----------
+  var canvas = document.getElementById("map");
+  var ctx = canvas.getContext("2d");
+  var W = canvas.width, H = canvas.height;
+  var PAD = { l: 52, r: 18, t: 18, b: 44 };
+  var plotW = W - PAD.l - PAD.r;
+  var plotH = H - PAD.t - PAD.b;
+
+  function toPx(vix, slope) {
+    var x = PAD.l + (vix - DOMAIN_X[0]) / (DOMAIN_X[1] - DOMAIN_X[0]) * plotW;
+    var y = PAD.t + plotH - (slope - DOMAIN_Y[0]) / (DOMAIN_Y[1] - DOMAIN_Y[0]) * plotH;
+    return [x, y];
+  }
+
+  function resolveColor(varName) {
+    return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+  }
+  function hexToRgb(hex) {
+    hex = hex.replace('#', '');
+    var n = parseInt(hex, 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+
+  var activeCell = null;
+
+  // ---------- real Voronoi geometry via d3-delaunay ----------
+  var delaunay = d3.Delaunay.from(
+    regimes,
+    function (r) { return toPx(r.vix, r.slope)[0]; },
+    function (r) { return toPx(r.vix, r.slope)[1]; }
+  );
+  var voronoi = delaunay.voronoi([PAD.l, PAD.t, PAD.l + plotW, PAD.t + plotH]);
+
+  function drawVoronoi() {
+    ctx.clearRect(0, 0, W, H);
+
+    // cell fills — one true polygon per regime, not a pixel raster
+    regimes.forEach(function (r) {
+      var dim = (activeCell !== null && activeCell !== r.id);
+      ctx.beginPath();
+      voronoi.renderCell(r.id, ctx);
+      ctx.fillStyle = resolveColor(r.cssVar);
+      ctx.globalAlpha = dim ? 0.10 : 0.30;
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+
+    // cell boundaries — the actual Voronoi edge mesh
+    ctx.beginPath();
+    voronoi.render(ctx);
+    ctx.strokeStyle = resolveColor('--ink');
+    ctx.globalAlpha = 0.55;
+    ctx.lineWidth = 1.25;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    drawAxes();
+    drawTrail();
+    drawSeeds();
+    drawToday();
+  }
+
+  function drawAxes() {
+    var lineColor = resolveColor('--line');
+    var inkSoft = resolveColor('--ink-soft');
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(PAD.l + 0.5, PAD.t + 0.5, plotW, plotH);
+
+    ctx.fillStyle = inkSoft;
+    ctx.font = "11px ui-monospace, SFMono-Regular, Consolas, monospace";
+    ctx.textAlign = "center";
+    var xt = [10, 15, 20, 25, 30, 35, 40, 45];
+    xt.forEach(function (v) {
+      var pt = toPx(v, DOMAIN_Y[0]);
+      ctx.fillText(v, pt[0], PAD.t + plotH + 16);
+    });
+    ctx.textAlign = "right";
+    var yt = [-1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2];
+    yt.forEach(function (v) {
+      var pt = toPx(DOMAIN_X[0], v);
+      ctx.fillText(v.toFixed(1), PAD.l - 8, pt[1] + 3);
+    });
+    ctx.textAlign = "center";
+    ctx.fillText("VIX level →", PAD.l + plotW / 2, PAD.t + plotH + 32);
+    ctx.save();
+    ctx.translate(14, PAD.t + plotH / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText("10Y–2Y slope, % →", 0, 0);
+    ctx.restore();
+
+    // zero-slope reference line (inversion threshold)
+    var zy = toPx(DOMAIN_X[0], 0)[1];
+    ctx.save();
+    ctx.setLineDash([3, 3]);
+    ctx.strokeStyle = inkSoft;
+    ctx.globalAlpha = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(PAD.l, zy);
+    ctx.lineTo(PAD.l + plotW, zy);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawTrail() {
+    ctx.lineJoin = "round";
+    for (var i = 1; i < days.length; i++) {
+      var a = toPx(days[i - 1].vix, days[i - 1].slope);
+      var b = toPx(days[i].vix, days[i].slope);
+      var recency = i / days.length; // fades in as we approach "today"
+      ctx.beginPath();
+      ctx.moveTo(a[0], a[1]);
+      ctx.lineTo(b[0], b[1]);
+      ctx.strokeStyle = resolveColor('--ink');
+      ctx.globalAlpha = 0.05 + 0.30 * recency;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    days.forEach(function (c, idx) {
+      if (idx === todayIdx) return;
+      var pt = toPx(c.vix, c.slope);
+      var r = regimes[c.cell];
+      var dim = (activeCell !== null && activeCell !== c.cell);
+      var recency = idx / days.length;
+      ctx.globalAlpha = dim ? 0.08 : (0.25 + 0.65 * recency);
+      ctx.beginPath();
+      ctx.arc(pt[0], pt[1], c.contestable ? 3.2 : 2.2, 0, Math.PI * 2);
+      ctx.fillStyle = resolveColor(r.cssVar);
+      ctx.fill();
+      if (c.contestable && !dim) {
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = resolveColor('--paper');
+        ctx.stroke();
+      }
+    });
+    ctx.globalAlpha = 1;
+  }
+
+  function drawSeeds() {
+    regimes.forEach(function (r) {
+      var pt = toPx(r.vix, r.slope);
+      var dim = (activeCell !== null && activeCell !== r.id);
+      ctx.globalAlpha = dim ? 0.3 : 1;
+      ctx.beginPath();
+      ctx.arc(pt[0], pt[1], 7, 0, Math.PI * 2);
+      ctx.fillStyle = resolveColor(r.cssVar);
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = resolveColor('--paper');
+      ctx.stroke();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = resolveColor('--ink');
+      ctx.beginPath();
+      ctx.arc(pt[0], pt[1], 7, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    });
+  }
+
+  function drawToday() {
+    var c = days[todayIdx];
+    var pt = toPx(c.vix, c.slope);
+    var r = regimes[c.cell];
+    var dim = (activeCell !== null && activeCell !== c.cell);
+    ctx.globalAlpha = dim ? 0.15 : 1;
+    // outer ring
+    ctx.beginPath();
+    ctx.arc(pt[0], pt[1], 9, 0, Math.PI * 2);
+    ctx.strokeStyle = resolveColor(r.cssVar);
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    // core
+    ctx.beginPath();
+    ctx.arc(pt[0], pt[1], 4.5, 0, Math.PI * 2);
+    ctx.fillStyle = resolveColor('--ink');
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(pt[0], pt[1], 4.5, 0, Math.PI * 2);
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = resolveColor('--paper');
+    ctx.stroke();
+    if (!dim) {
+      ctx.fillStyle = resolveColor('--ink');
+      ctx.font = "600 11px -apple-system, Segoe UI, sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText("today", pt[0] + 13, pt[1] + 4);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  drawVoronoi();
+
+  var mo = new MutationObserver(drawVoronoi);
+  mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  if (window.matchMedia) {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', drawVoronoi);
+  }
+
+  // ---------- interaction: hover tooltip ----------
+  var tooltip = document.getElementById("tooltip");
+
+  function canvasScale() {
+    var rect = canvas.getBoundingClientRect();
+    return { sx: canvas.width / rect.width, sy: canvas.height / rect.height, rect: rect };
+  }
+
+  canvas.addEventListener("mousemove", function (e) {
+    var s = canvasScale();
+    var mx = (e.clientX - s.rect.left) * s.sx;
+    var my = (e.clientY - s.rect.top) * s.sy;
+    var closest = null, closestD = Infinity, closestIdx = -1;
+    days.forEach(function (c, idx) {
+      var pt = toPx(c.vix, c.slope);
+      var d = (pt[0] - mx) * (pt[0] - mx) + (pt[1] - my) * (pt[1] - my);
+      if (d < closestD) { closestD = d; closest = c; closestIdx = idx; }
+    });
+    if (closest && closestD < 14 * 14) {
+      var r = regimes[closest.cell];
+      var pt = toPx(closest.vix, closest.slope);
+      tooltip.style.left = (pt[0] / s.sx) + "px";
+      tooltip.style.top = (pt[1] / s.sy) + "px";
+      tooltip.innerHTML =
+        fmtDate(closest.date) + (closestIdx === todayIdx ? " · today" : "") + "<br>" +
+        "VIX " + closest.vix.toFixed(1) + " · slope " + closest.slope.toFixed(2) + "%<br>" +
+        "<span class=\"tt-tag\">→ " + r.name + "</span>" +
+        (closest.contestable ? "<br><span class=\"tt-tag\">turning point</span>" : "");
+      tooltip.classList.add("visible");
+    } else {
+      tooltip.classList.remove("visible");
+    }
+  });
+  canvas.addEventListener("mouseleave", function () { tooltip.classList.remove("visible"); });
+
+  // ---------- sidebar cards ----------
+  var cardsEl = document.getElementById("cards");
+  var tiltKeys = ["equity", "bond", "gold", "cash"];
+  var tiltShade = { equity: "1", bond: "0.6", gold: "0.85", cash: "0.35" };
+
+  regimes.forEach(function (r) {
+    var card = document.createElement("div");
+    card.className = "portfolio-card" + (r.id === currentRegime ? " is-current" : "");
+    card.style.setProperty("--card-accent", "var(" + r.cssVar + ")");
+    card.tabIndex = 0;
+    card.dataset.id = r.id;
+
+    var barSpans = tiltKeys.map(function (k) {
+      return '<span style="width:' + r.tilt[k] + '%; background: var(' + r.cssVar + '); opacity:' + tiltShade[k] + ';"></span>';
+    }).join("");
+
+    card.innerHTML =
+      '<div class="pc-top"><span class="pc-name">' + r.name + '</span>' +
+      (r.id === currentRegime ? '<span class="pc-current-tag">current</span>' : '<span class="pc-count">' + counts[r.id] + ' days</span>') +
+      '</div>' +
+      '<div class="pc-meta">VIX ' + r.vix + ' · slope ' + (r.slope > 0 ? '+' : '') + r.slope.toFixed(1) + '%' +
+      (r.id === currentRegime ? ' · ' + counts[r.id] + ' days total' : '') + '</div>' +
+      '<div class="alloc-bar">' + barSpans + '</div>' +
+      '<div class="alloc-legend">' +
+        '<span>eq ' + r.tilt.equity + '%</span>' +
+        '<span>bd ' + r.tilt.bond + '%</span>' +
+        '<span>gold ' + r.tilt.gold + '%</span>' +
+        '<span>cash ' + r.tilt.cash + '%</span>' +
+      '</div>';
+
+    function toggle() {
+      activeCell = (activeCell === r.id) ? null : r.id;
+      refreshCards();
+      drawVoronoi();
+    }
+    card.addEventListener("click", toggle);
+    card.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
+    });
+
+    cardsEl.appendChild(card);
+  });
+
+  function refreshCards() {
+    Array.prototype.forEach.call(cardsEl.children, function (el) {
+      var id = parseInt(el.dataset.id, 10);
+      el.classList.toggle("active", activeCell === id);
+      el.classList.toggle("dim", activeCell !== null && activeCell !== id);
+    });
+  }
+
+  document.getElementById("resetBtn").addEventListener("click", function () {
+    activeCell = null;
+    refreshCards();
+    drawVoronoi();
+  });
+
+  // ---------- ledger stats ----------
+  var mostContested = (function () {
+    var pairCounts = {};
+    days.filter(function (c) { return c.contestable; }).forEach(function (c) {
+      var d = regimes.map(function (r) { return distSq(c.vix, c.slope, r.vix, r.slope); });
+      var order = d.map(function (v, i2) { return i2; }).sort(function (a, b) { return d[a] - d[b]; });
+      var key = [order[0], order[1]].sort().join("-");
+      pairCounts[key] = (pairCounts[key] || 0) + 1;
+    });
+    var best = null, bestN = 0;
+    Object.keys(pairCounts).forEach(function (k) {
+      if (pairCounts[k] > bestN) { bestN = pairCounts[k]; best = k; }
+    });
+    if (!best) return "—";
+    var ids = best.split("-").map(Number);
+    return regimes[ids[0]].name + " / " + regimes[ids[1]].name;
+  })();
+
+  var ledger = document.getElementById("ledger");
+  var ledgerData = [
+    ["current regime", regimes[currentRegime].name],
+    ["days in current regime", daysSinceChange],
+    ["turning-point days", contestableCount + " (" + Math.round(100 * contestableCount / days.length) + "%)"],
+    ["most contested boundary", mostContested]
+  ];
+  ledgerData.forEach(function (row) {
+    var cell = document.createElement("div");
+    cell.className = "ledger-cell";
+    cell.innerHTML = '<div class="ledger-label">' + row[0] + '</div><div class="ledger-value">' + row[1] + '</div>';
+    ledger.appendChild(cell);
+  });
+})();
+</script>
