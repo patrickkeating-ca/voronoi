@@ -313,13 +313,12 @@
   <header class="masthead">
     <div class="eyebrow">Fintech &amp; Geometry — No. 02</div>
     <h1>Today's market sits in whichever regime it's closest to.</h1>
-    <p class="thesis">
+    <p class="thesis" id="thesis">
       Characterize each historical market regime by two coordinates — equity
       volatility and the shape of the yield curve — and a day's readings can be
       classified by nearest neighbor, the same rule a robo-advisor uses to sort
       clients into model portfolios. The Voronoi cells are the regimes; the trail is
-      where the market has actually walked to get to today. Mock data, ~2.7 years of
-      synthetic daily observations, 6 regimes.
+      where the market has actually walked to get to today.
     </p>
   </header>
 
@@ -329,6 +328,7 @@
         <h2>VIX level × 10Y–2Y curve slope</h2>
         <span class="map-note" id="hoverHint">hover a day · click a regime to isolate</span>
       </div>
+      <div class="map-note" id="sourceNote" style="margin-bottom:0.5rem;"></div>
       <div class="canvas-shell">
         <canvas id="map" width="900" height="620"></canvas>
         <div class="tooltip" id="tooltip"></div>
@@ -367,19 +367,40 @@
     </div>
   </div>
 
-  <footer>
-    Synthetic data for illustration · Voronoi cells computed as true polygons via d3-delaunay, run locally
+  <footer id="footerNote">
+    Voronoi cells computed as true polygons via d3-delaunay, run locally
   </footer>
 </div>
 
+<script src="./data/regime-data.js"></script>
 <script src="./d3.min.js"></script>
 <script>
 (function () {
   "use strict";
 
-  // ---------- mock regimes (seeds) ----------
+  // ---------- regimes (seeds) ----------
   // x: VIX level, y: 10Y-2Y yield curve slope (%)
-  var regimes = [
+  // Coordinates calibrated to where 2023-07 -> present actually clustered
+  // (real data ranged VIX 11.9-52.3, slope -0.99%-+0.74%; the inversion
+  // never got very deep in this window, and the big vol spikes — Aug 2024,
+  // Apr 2025 tariff shock, Mar 2026 — all happened on a *positive*, steepening
+  // curve, not while inverted).
+  var USING_REAL_DATA = !!(window.REGIME_DATA && window.REGIME_DATA.days && window.REGIME_DATA.days.length);
+
+  var regimes = USING_REAL_DATA ? [
+    { id: 0, name: "Deep Inversion, Calm",   vix: 13, slope: -0.85, color: "var(--c4)", cssVar: "--c4",
+      tilt: { equity: 45, bond: 35, gold: 10, cash: 10 } },
+    { id: 1, name: "Inversion Fading",       vix: 15, slope: -0.30, color: "var(--c3)", cssVar: "--c3",
+      tilt: { equity: 55, bond: 30, gold: 8,  cash: 7  } },
+    { id: 2, name: "Goldilocks Steepening",  vix: 14, slope:  0.40, color: "var(--c2)", cssVar: "--c2",
+      tilt: { equity: 68, bond: 20, gold: 4,  cash: 8  } },
+    { id: 3, name: "Elevated Vol, Growth Scare", vix: 22, slope: 0.55, color: "var(--c5)", cssVar: "--c5",
+      tilt: { equity: 45, bond: 25, gold: 12, cash: 18 } },
+    { id: 4, name: "Shock Selloff",          vix: 42, slope:  0.50, color: "var(--c6)", cssVar: "--c6",
+      tilt: { equity: 20, bond: 25, gold: 25, cash: 30 } },
+    { id: 5, name: "Melt-Up / Ultra Calm",   vix: 12, slope:  0.15, color: "var(--c1)", cssVar: "--c1",
+      tilt: { equity: 78, bond: 12, gold: 0,  cash: 10 } }
+  ] : [
     { id: 0, name: "Goldilocks",             vix: 13, slope:  1.2, color: "var(--c1)", cssVar: "--c1",
       tilt: { equity: 65, bond: 20, gold: 5,  cash: 10 } },
     { id: 1, name: "Melt-Up / Euphoria",      vix: 11, slope:  0.3, color: "var(--c2)", cssVar: "--c2",
@@ -394,8 +415,8 @@
       tilt: { equity: 15, bond: 20, gold: 35, cash: 30 } }
   ];
 
-  var DOMAIN_X = [9, 45];   // VIX
-  var DOMAIN_Y = [-1.6, 2.2]; // curve slope %
+  var DOMAIN_X = USING_REAL_DATA ? [10, 55]     : [9, 45];    // VIX
+  var DOMAIN_Y = USING_REAL_DATA ? [-1.05, 0.85] : [-1.6, 2.2]; // curve slope %
 
   // ---------- seeded RNG for stable mock data ----------
   function mulberry32(a) {
@@ -413,41 +434,53 @@
   }
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
-  // ---------- build a synthetic daily walk through regime-space ----------
-  // Phases: [regimeId, tradingDayCount] — the "true" narrative path the market took.
-  var phases = [
-    [0, 130], [2, 70], [3, 90], [4, 55], [5, 45], [0, 150], [1, 90], [3, 60]
-  ];
-  var rawX = [], rawY = [];
-  phases.forEach(function (ph) {
-    var r = regimes[ph[0]];
-    for (var i = 0; i < ph[1]; i++) {
-      rawX.push(r.vix + gauss() * 2.4);
-      rawY.push(r.slope + gauss() * 0.22);
-    }
-  });
-  // smooth with a moving average so transitions between phases are a walked
-  // path rather than a teleport
-  var WIN = 9;
-  var days = [];
-  for (var i = 0; i < rawX.length; i++) {
-    var lo = Math.max(0, i - WIN), hi = Math.min(rawX.length, i + WIN + 1);
-    var sx = 0, sy = 0, n = 0;
-    for (var j = lo; j < hi; j++) { sx += rawX[j]; sy += rawY[j]; n++; }
-    days.push({
-      vix: clamp(sx / n, DOMAIN_X[0], DOMAIN_X[1]),
-      slope: clamp(sy / n, DOMAIN_Y[0], DOMAIN_Y[1])
+  // ---------- daily observations: real FRED data, or a synthetic fallback ----------
+  var days, dates;
+
+  if (USING_REAL_DATA) {
+    // window.REGIME_DATA.days = [{ date: "YYYY-MM-DD", vix, slope }, ...]
+    // written by fetch-data.js from FRED series VIXCLS and T10Y2Y
+    days = window.REGIME_DATA.days.map(function (d) {
+      return { vix: d.vix, slope: d.slope, date: new Date(d.date + "T00:00:00") };
     });
+    dates = days.map(function (d) { return d.date; });
+  } else {
+    // Phases: [regimeId, tradingDayCount] — the "true" narrative path the market took.
+    var phases = [
+      [0, 130], [2, 70], [3, 90], [4, 55], [5, 45], [0, 150], [1, 90], [3, 60]
+    ];
+    var rawX = [], rawY = [];
+    phases.forEach(function (ph) {
+      var r = regimes[ph[0]];
+      for (var i = 0; i < ph[1]; i++) {
+        rawX.push(r.vix + gauss() * 2.4);
+        rawY.push(r.slope + gauss() * 0.22);
+      }
+    });
+    // smooth with a moving average so transitions between phases are a walked
+    // path rather than a teleport
+    var WIN = 9;
+    days = [];
+    for (var i = 0; i < rawX.length; i++) {
+      var lo = Math.max(0, i - WIN), hi = Math.min(rawX.length, i + WIN + 1);
+      var sx = 0, sy = 0, n = 0;
+      for (var j = lo; j < hi; j++) { sx += rawX[j]; sy += rawY[j]; n++; }
+      days.push({
+        vix: clamp(sx / n, DOMAIN_X[0], DOMAIN_X[1]),
+        slope: clamp(sy / n, DOMAIN_Y[0], DOMAIN_Y[1])
+      });
+    }
+
+    // synthetic trading-day dates ending "today"
+    var TODAY = new Date(2026, 6, 14); // 2026-07-14
+    dates = new Array(days.length);
+    var cursor = new Date(TODAY);
+    for (var k = days.length - 1; k >= 0; k--) {
+      dates[k] = new Date(cursor);
+      do { cursor.setDate(cursor.getDate() - 1); } while (cursor.getDay() === 0 || cursor.getDay() === 6);
+    }
   }
 
-  // synthetic trading-day dates ending "today"
-  var TODAY = new Date(2026, 6, 14); // 2026-07-14
-  var dates = new Array(days.length);
-  var cursor = new Date(TODAY);
-  for (var k = days.length - 1; k >= 0; k--) {
-    dates[k] = new Date(cursor);
-    do { cursor.setDate(cursor.getDate() - 1); } while (cursor.getDay() === 0 || cursor.getDay() === 6);
-  }
   function fmtDate(d) {
     var m = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()];
     return m + " " + d.getDate() + ", " + d.getFullYear();
@@ -486,6 +519,12 @@
   var PAD = { l: 52, r: 18, t: 18, b: 44 };
   var plotW = W - PAD.l - PAD.r;
   var plotH = H - PAD.t - PAD.b;
+
+  function niceTicks(lo, hi, count) {
+    var ticks = [];
+    for (var i = 0; i < count; i++) ticks.push(lo + (hi - lo) * (i / (count - 1)));
+    return ticks;
+  }
 
   function toPx(vix, slope) {
     var x = PAD.l + (vix - DOMAIN_X[0]) / (DOMAIN_X[1] - DOMAIN_X[0]) * plotW;
@@ -551,16 +590,14 @@
     ctx.fillStyle = inkSoft;
     ctx.font = "11px ui-monospace, SFMono-Regular, Consolas, monospace";
     ctx.textAlign = "center";
-    var xt = [10, 15, 20, 25, 30, 35, 40, 45];
-    xt.forEach(function (v) {
+    niceTicks(DOMAIN_X[0], DOMAIN_X[1], 8).forEach(function (v) {
       var pt = toPx(v, DOMAIN_Y[0]);
-      ctx.fillText(v, pt[0], PAD.t + plotH + 16);
+      ctx.fillText(Math.round(v), pt[0], PAD.t + plotH + 16);
     });
     ctx.textAlign = "right";
-    var yt = [-1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2];
-    yt.forEach(function (v) {
+    niceTicks(DOMAIN_Y[0], DOMAIN_Y[1], 7).forEach(function (v) {
       var pt = toPx(DOMAIN_X[0], v);
-      ctx.fillText(v.toFixed(1), PAD.l - 8, pt[1] + 3);
+      ctx.fillText(v.toFixed(2), PAD.l - 8, pt[1] + 3);
     });
     ctx.textAlign = "center";
     ctx.fillText("VIX level →", PAD.l + plotW / 2, PAD.t + plotH + 32);
@@ -801,5 +838,26 @@
     cell.innerHTML = '<div class="ledger-label">' + row[0] + '</div><div class="ledger-value">' + row[1] + '</div>';
     ledger.appendChild(cell);
   });
+
+  // ---------- data provenance ----------
+  var thesisEl = document.getElementById("thesis");
+  var sourceNote = document.getElementById("sourceNote");
+  var footerNote = document.getElementById("footerNote");
+  if (USING_REAL_DATA) {
+    var asOf = fmtDate(dates[dates.length - 1]);
+    var since = fmtDate(dates[0]);
+    thesisEl.appendChild(document.createTextNode(
+      " Real data: FRED series VIXCLS and T10Y2Y, " + days.length + " trading days from " + since + " to " + asOf + "."
+    ));
+    sourceNote.textContent = "live FRED data · as of " + asOf;
+    footerNote.textContent = "Source: FRED (VIXCLS, T10Y2Y), fetched via fetch-data.js · " +
+      "Voronoi cells computed as true polygons via d3-delaunay, run locally";
+  } else {
+    thesisEl.appendChild(document.createTextNode(
+      " Mock data — no FRED data found (run node --env-file=.env fetch-data.js), ~2.7 years of synthetic daily observations, 6 regimes."
+    ));
+    sourceNote.textContent = "synthetic fallback data";
+    footerNote.textContent = "Synthetic data for illustration · Voronoi cells computed as true polygons via d3-delaunay, run locally";
+  }
 })();
 </script>
