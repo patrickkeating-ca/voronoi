@@ -1,4 +1,5 @@
 <title>Nearest Regime — Market Scenario Voronoi Map</title>
+<link rel="icon" type="image/x-icon" href="./favicon.ico">
 <style>
   :root {
     --paper: #eef1ef;
@@ -326,7 +327,7 @@
     <div class="map-panel">
       <div class="map-panel-head">
         <h2>VIX level × 10Y–2Y curve slope</h2>
-        <span class="map-note" id="hoverHint">hover a day · click a regime to isolate</span>
+        <span class="map-note" id="hoverHint">hover a day · click a regime to isolate · drag a seed to reshape</span>
       </div>
       <div class="map-note" id="sourceNote" style="margin-bottom:0.5rem;"></div>
       <div class="canvas-shell">
@@ -486,31 +487,57 @@
     return m + " " + d.getDate() + ", " + d.getFullYear();
   }
 
+  days.forEach(function (c, idx) { c.date = dates[idx]; });
+
   // ---------- nearest / second-nearest regime for every day ----------
+  // Re-run whenever a seed moves (drag), not just once at load.
   function distSq(x1, y1, x2, y2) {
     var dx = (x1 - x2) / (DOMAIN_X[1] - DOMAIN_X[0]);
     var dy = (y1 - y2) / (DOMAIN_Y[1] - DOMAIN_Y[0]);
     return dx * dx + dy * dy;
   }
-  days.forEach(function (c, idx) {
-    var d = regimes.map(function (r) { return distSq(c.vix, c.slope, r.vix, r.slope); });
-    var order = d.map(function (v, i2) { return i2; }).sort(function (a, b) { return d[a] - d[b]; });
-    c.cell = order[0];
-    c.nearest = Math.sqrt(d[order[0]]);
-    c.second = Math.sqrt(d[order[1]]);
-    c.contestable = (c.second - c.nearest) < 0.05;
-    c.date = dates[idx];
-  });
-
-  var counts = regimes.map(function (r) {
-    return days.filter(function (c) { return c.cell === r.id; }).length;
-  });
-  var contestableCount = days.filter(function (c) { return c.contestable; }).length;
 
   var todayIdx = days.length - 1;
-  var currentRegime = days[todayIdx].cell;
-  var daysSinceChange = 1;
-  for (var b = todayIdx - 1; b >= 0 && days[b].cell === currentRegime; b--) daysSinceChange++;
+  var counts, contestableCount, currentRegime, daysSinceChange, mostContested;
+
+  function classifyDays() {
+    days.forEach(function (c) {
+      var d = regimes.map(function (r) { return distSq(c.vix, c.slope, r.vix, r.slope); });
+      var order = d.map(function (v, i2) { return i2; }).sort(function (a, b) { return d[a] - d[b]; });
+      c.cell = order[0];
+      c.nearest = Math.sqrt(d[order[0]]);
+      c.second = Math.sqrt(d[order[1]]);
+      c.contestable = (c.second - c.nearest) < 0.05;
+    });
+
+    counts = regimes.map(function (r) {
+      return days.filter(function (c) { return c.cell === r.id; }).length;
+    });
+    contestableCount = days.filter(function (c) { return c.contestable; }).length;
+
+    currentRegime = days[todayIdx].cell;
+    daysSinceChange = 1;
+    for (var b = todayIdx - 1; b >= 0 && days[b].cell === currentRegime; b--) daysSinceChange++;
+
+    mostContested = (function () {
+      var pairCounts = {};
+      days.filter(function (c) { return c.contestable; }).forEach(function (c) {
+        var d = regimes.map(function (r) { return distSq(c.vix, c.slope, r.vix, r.slope); });
+        var order = d.map(function (v, i2) { return i2; }).sort(function (a, b) { return d[a] - d[b]; });
+        var key = [order[0], order[1]].sort().join("-");
+        pairCounts[key] = (pairCounts[key] || 0) + 1;
+      });
+      var best = null, bestN = 0;
+      Object.keys(pairCounts).forEach(function (k) {
+        if (pairCounts[k] > bestN) { bestN = pairCounts[k]; best = k; }
+      });
+      if (!best) return "—";
+      var ids = best.split("-").map(Number);
+      return regimes[ids[0]].name + " / " + regimes[ids[1]].name;
+    })();
+  }
+
+  classifyDays();
 
   // ---------- canvas setup ----------
   var canvas = document.getElementById("map");
@@ -531,6 +558,11 @@
     var y = PAD.t + plotH - (slope - DOMAIN_Y[0]) / (DOMAIN_Y[1] - DOMAIN_Y[0]) * plotH;
     return [x, y];
   }
+  function fromPx(x, y) {
+    var vix = DOMAIN_X[0] + (x - PAD.l) / plotW * (DOMAIN_X[1] - DOMAIN_X[0]);
+    var slope = DOMAIN_Y[0] + (plotH - (y - PAD.t)) / plotH * (DOMAIN_Y[1] - DOMAIN_Y[0]);
+    return [clamp(vix, DOMAIN_X[0], DOMAIN_X[1]), clamp(slope, DOMAIN_Y[0], DOMAIN_Y[1])];
+  }
 
   function resolveColor(varName) {
     return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
@@ -544,12 +576,17 @@
   var activeCell = null;
 
   // ---------- real Voronoi geometry via d3-delaunay ----------
-  var delaunay = d3.Delaunay.from(
-    regimes,
-    function (r) { return toPx(r.vix, r.slope)[0]; },
-    function (r) { return toPx(r.vix, r.slope)[1]; }
-  );
-  var voronoi = delaunay.voronoi([PAD.l, PAD.t, PAD.l + plotW, PAD.t + plotH]);
+  // rebuilt whenever a seed is dragged, since the point set changed
+  var delaunay, voronoi;
+  function rebuildVoronoi() {
+    delaunay = d3.Delaunay.from(
+      regimes,
+      function (r) { return toPx(r.vix, r.slope)[0]; },
+      function (r) { return toPx(r.vix, r.slope)[1]; }
+    );
+    voronoi = delaunay.voronoi([PAD.l, PAD.t, PAD.l + plotW, PAD.t + plotH]);
+  }
+  rebuildVoronoi();
 
   function drawVoronoi() {
     ctx.clearRect(0, 0, W, H);
@@ -659,18 +696,20 @@
     regimes.forEach(function (r) {
       var pt = toPx(r.vix, r.slope);
       var dim = (activeCell !== null && activeCell !== r.id);
+      var isDragging = (dragging === r);
+      var radius = isDragging ? 9.5 : 7;
       ctx.globalAlpha = dim ? 0.3 : 1;
       ctx.beginPath();
-      ctx.arc(pt[0], pt[1], 7, 0, Math.PI * 2);
+      ctx.arc(pt[0], pt[1], radius, 0, Math.PI * 2);
       ctx.fillStyle = resolveColor(r.cssVar);
       ctx.fill();
       ctx.lineWidth = 2;
       ctx.strokeStyle = resolveColor('--paper');
       ctx.stroke();
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = resolveColor('--ink');
+      ctx.lineWidth = isDragging ? 2 : 1;
+      ctx.strokeStyle = resolveColor(isDragging ? '--accent' : '--ink');
       ctx.beginPath();
-      ctx.arc(pt[0], pt[1], 7, 0, Math.PI * 2);
+      ctx.arc(pt[0], pt[1], radius, 0, Math.PI * 2);
       ctx.stroke();
       ctx.globalAlpha = 1;
     });
@@ -724,9 +763,26 @@
   }
 
   canvas.addEventListener("mousemove", function (e) {
+    if (dragging) return; // the drag handler below owns the tooltip/cursor while active
+
     var s = canvasScale();
     var mx = (e.clientX - s.rect.left) * s.sx;
     var my = (e.clientY - s.rect.top) * s.sy;
+
+    var hoverSeed = seedAt(mx, my);
+    canvas.style.cursor = hoverSeed ? "grab" : "crosshair";
+    if (hoverSeed) {
+      var spt = toPx(hoverSeed.vix, hoverSeed.slope);
+      tooltip.style.left = (spt[0] / s.sx) + "px";
+      tooltip.style.top = (spt[1] / s.sy) + "px";
+      tooltip.innerHTML =
+        "<span class=\"tt-tag\">" + hoverSeed.name + "</span><br>" +
+        "VIX " + hoverSeed.vix.toFixed(1) + " · slope " + hoverSeed.slope.toFixed(2) + "%<br>" +
+        "drag to reposition";
+      tooltip.classList.add("visible");
+      return;
+    }
+
     var closest = null, closestD = Infinity, closestIdx = -1;
     days.forEach(function (c, idx) {
       var pt = toPx(c.vix, c.slope);
@@ -748,95 +804,144 @@
       tooltip.classList.remove("visible");
     }
   });
-  canvas.addEventListener("mouseleave", function () { tooltip.classList.remove("visible"); });
+  canvas.addEventListener("mouseleave", function () {
+    if (!dragging) tooltip.classList.remove("visible");
+  });
 
   // ---------- sidebar cards ----------
   var cardsEl = document.getElementById("cards");
   var tiltKeys = ["equity", "bond", "gold", "cash"];
   var tiltShade = { equity: "1", bond: "0.6", gold: "0.85", cash: "0.35" };
 
-  regimes.forEach(function (r) {
-    var card = document.createElement("div");
-    card.className = "portfolio-card" + (r.id === currentRegime ? " is-current" : "");
-    card.style.setProperty("--card-accent", "var(" + r.cssVar + ")");
-    card.tabIndex = 0;
-    card.dataset.id = r.id;
+  function renderCards() {
+    cardsEl.innerHTML = "";
+    regimes.forEach(function (r) {
+      var card = document.createElement("div");
+      card.className = "portfolio-card" +
+        (r.id === currentRegime ? " is-current" : "") +
+        (activeCell === r.id ? " active" : "") +
+        (activeCell !== null && activeCell !== r.id ? " dim" : "");
+      card.style.setProperty("--card-accent", "var(" + r.cssVar + ")");
+      card.tabIndex = 0;
+      card.dataset.id = r.id;
 
-    var barSpans = tiltKeys.map(function (k) {
-      return '<span style="width:' + r.tilt[k] + '%; background: var(' + r.cssVar + '); opacity:' + tiltShade[k] + ';"></span>';
-    }).join("");
+      var barSpans = tiltKeys.map(function (k) {
+        return '<span style="width:' + r.tilt[k] + '%; background: var(' + r.cssVar + '); opacity:' + tiltShade[k] + ';"></span>';
+      }).join("");
 
-    card.innerHTML =
-      '<div class="pc-top"><span class="pc-name">' + r.name + '</span>' +
-      (r.id === currentRegime ? '<span class="pc-current-tag">current</span>' : '<span class="pc-count">' + counts[r.id] + ' days</span>') +
-      '</div>' +
-      '<div class="pc-meta">VIX ' + r.vix + ' · slope ' + (r.slope > 0 ? '+' : '') + r.slope.toFixed(1) + '%' +
-      (r.id === currentRegime ? ' · ' + counts[r.id] + ' days total' : '') + '</div>' +
-      '<div class="alloc-bar">' + barSpans + '</div>' +
-      '<div class="alloc-legend">' +
-        '<span>eq ' + r.tilt.equity + '%</span>' +
-        '<span>bd ' + r.tilt.bond + '%</span>' +
-        '<span>gold ' + r.tilt.gold + '%</span>' +
-        '<span>cash ' + r.tilt.cash + '%</span>' +
-      '</div>';
+      card.innerHTML =
+        '<div class="pc-top"><span class="pc-name">' + r.name + '</span>' +
+        (r.id === currentRegime ? '<span class="pc-current-tag">current</span>' : '<span class="pc-count">' + counts[r.id] + ' days</span>') +
+        '</div>' +
+        '<div class="pc-meta">VIX ' + r.vix.toFixed(0) + ' · slope ' + (r.slope > 0 ? '+' : '') + r.slope.toFixed(2) + '%' +
+        (r.id === currentRegime ? ' · ' + counts[r.id] + ' days total' : '') + '</div>' +
+        '<div class="alloc-bar">' + barSpans + '</div>' +
+        '<div class="alloc-legend">' +
+          '<span>eq ' + r.tilt.equity + '%</span>' +
+          '<span>bd ' + r.tilt.bond + '%</span>' +
+          '<span>gold ' + r.tilt.gold + '%</span>' +
+          '<span>cash ' + r.tilt.cash + '%</span>' +
+        '</div>';
 
-    function toggle() {
-      activeCell = (activeCell === r.id) ? null : r.id;
-      refreshCards();
-      drawVoronoi();
-    }
-    card.addEventListener("click", toggle);
-    card.addEventListener("keydown", function (e) {
-      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
-    });
+      function toggle() {
+        activeCell = (activeCell === r.id) ? null : r.id;
+        renderCards();
+        drawVoronoi();
+      }
+      card.addEventListener("click", toggle);
+      card.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
+      });
 
-    cardsEl.appendChild(card);
-  });
-
-  function refreshCards() {
-    Array.prototype.forEach.call(cardsEl.children, function (el) {
-      var id = parseInt(el.dataset.id, 10);
-      el.classList.toggle("active", activeCell === id);
-      el.classList.toggle("dim", activeCell !== null && activeCell !== id);
+      cardsEl.appendChild(card);
     });
   }
+  renderCards();
 
   document.getElementById("resetBtn").addEventListener("click", function () {
     activeCell = null;
-    refreshCards();
+    renderCards();
     drawVoronoi();
   });
 
   // ---------- ledger stats ----------
-  var mostContested = (function () {
-    var pairCounts = {};
-    days.filter(function (c) { return c.contestable; }).forEach(function (c) {
-      var d = regimes.map(function (r) { return distSq(c.vix, c.slope, r.vix, r.slope); });
-      var order = d.map(function (v, i2) { return i2; }).sort(function (a, b) { return d[a] - d[b]; });
-      var key = [order[0], order[1]].sort().join("-");
-      pairCounts[key] = (pairCounts[key] || 0) + 1;
-    });
-    var best = null, bestN = 0;
-    Object.keys(pairCounts).forEach(function (k) {
-      if (pairCounts[k] > bestN) { bestN = pairCounts[k]; best = k; }
-    });
-    if (!best) return "—";
-    var ids = best.split("-").map(Number);
-    return regimes[ids[0]].name + " / " + regimes[ids[1]].name;
-  })();
-
   var ledger = document.getElementById("ledger");
-  var ledgerData = [
-    ["current regime", regimes[currentRegime].name],
-    ["days in current regime", daysSinceChange],
-    ["turning-point days", contestableCount + " (" + Math.round(100 * contestableCount / days.length) + "%)"],
-    ["most contested boundary", mostContested]
-  ];
-  ledgerData.forEach(function (row) {
-    var cell = document.createElement("div");
-    cell.className = "ledger-cell";
-    cell.innerHTML = '<div class="ledger-label">' + row[0] + '</div><div class="ledger-value">' + row[1] + '</div>';
-    ledger.appendChild(cell);
+  function renderLedger() {
+    ledger.innerHTML = "";
+    var ledgerData = [
+      ["current regime", regimes[currentRegime].name],
+      ["days in current regime", daysSinceChange],
+      ["turning-point days", contestableCount + " (" + Math.round(100 * contestableCount / days.length) + "%)"],
+      ["most contested boundary", mostContested]
+    ];
+    ledgerData.forEach(function (row) {
+      var cell = document.createElement("div");
+      cell.className = "ledger-cell";
+      cell.innerHTML = '<div class="ledger-label">' + row[0] + '</div><div class="ledger-value">' + row[1] + '</div>';
+      ledger.appendChild(cell);
+    });
+  }
+  renderLedger();
+
+  // ---------- drag-to-reposition regime seeds ----------
+  var SEED_HIT_RADIUS = 11; // canvas px
+  var dragging = null;
+
+  function seedAt(mx, my) {
+    var best = null, bestD = Infinity;
+    regimes.forEach(function (r) {
+      var pt = toPx(r.vix, r.slope);
+      var d = (pt[0] - mx) * (pt[0] - mx) + (pt[1] - my) * (pt[1] - my);
+      if (d < bestD) { bestD = d; best = r; }
+    });
+    return (best && bestD < SEED_HIT_RADIUS * SEED_HIT_RADIUS) ? best : null;
+  }
+
+  function refreshAfterMove() {
+    rebuildVoronoi();
+    classifyDays();
+    renderCards();
+    renderLedger();
+    drawVoronoi();
+  }
+
+  canvas.addEventListener("mousedown", function (e) {
+    var s = canvasScale();
+    var mx = (e.clientX - s.rect.left) * s.sx;
+    var my = (e.clientY - s.rect.top) * s.sy;
+    var hit = seedAt(mx, my);
+    if (hit) {
+      dragging = hit;
+      canvas.style.cursor = "grabbing";
+      tooltip.classList.remove("visible");
+      e.preventDefault();
+    }
+  });
+
+  window.addEventListener("mousemove", function (e) {
+    if (!dragging) return;
+    var s = canvasScale();
+    var mx = (e.clientX - s.rect.left) * s.sx;
+    var my = (e.clientY - s.rect.top) * s.sy;
+    var v = fromPx(mx, my);
+    dragging.vix = v[0];
+    dragging.slope = v[1];
+    refreshAfterMove();
+
+    var pt = toPx(dragging.vix, dragging.slope);
+    tooltip.style.left = (pt[0] / s.sx) + "px";
+    tooltip.style.top = (pt[1] / s.sy) + "px";
+    tooltip.innerHTML =
+      "<span class=\"tt-tag\">" + dragging.name + "</span><br>" +
+      "VIX " + dragging.vix.toFixed(1) + " · slope " + dragging.slope.toFixed(2) + "%";
+    tooltip.classList.add("visible");
+  });
+
+  window.addEventListener("mouseup", function () {
+    if (!dragging) return;
+    dragging = null;
+    canvas.style.cursor = "crosshair";
+    tooltip.classList.remove("visible");
   });
 
   // ---------- data provenance ----------
