@@ -1,14 +1,14 @@
 # Backtest: does the nearest-seed regime classifier hold up?
 
-`backtest.js` runs the exact classifier from `voronoi-regime.html` (same 6
-seeds, same domain, same 0.05 contestable-margin threshold) against 8 years
-of real FRED data (`VIXCLS`, `T10Y2Y`, 2018-07 -> 2026-07, 1,994 trading
-days) and checks it against six known volatility/curve events. Reproduce
-with:
+`scripts/backtest.js` runs the exact classifier from `voronoi-regime.html`
+(same 6 seeds, same domain, same 0.05 contestable-margin threshold) against
+8 years of real FRED data (`VIXCLS`, `T10Y2Y`, 2018-07 -> 2026-07, 1,994
+trading days) and checks it against six known volatility/curve events.
+Reproduce with:
 
 ```
-node --env-file=.env fetch-data.js 8 backtest-data
-node backtest.js
+node --env-file=.env scripts/fetch-data.js 8 backtest-data
+node scripts/backtest.js
 ```
 
 ## Headline result: severity gets flattened

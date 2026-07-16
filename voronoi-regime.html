@@ -374,7 +374,7 @@
 </div>
 
 <script src="./data/regime-data.js"></script>
-<script src="./d3.min.js"></script>
+<script src="./vendor/d3.min.js"></script>
 <script>
 (function () {
   "use strict";
@@ -955,11 +955,11 @@
       " Real data: FRED series VIXCLS and T10Y2Y, " + days.length + " trading days from " + since + " to " + asOf + "."
     ));
     sourceNote.textContent = "live FRED data · as of " + asOf;
-    footerNote.textContent = "Source: FRED (VIXCLS, T10Y2Y), fetched via fetch-data.js · " +
+    footerNote.textContent = "Source: FRED (VIXCLS, T10Y2Y), fetched via scripts/fetch-data.js · " +
       "Voronoi cells computed as true polygons via d3-delaunay, run locally";
   } else {
     thesisEl.appendChild(document.createTextNode(
-      " Mock data — no FRED data found (run node --env-file=.env fetch-data.js), ~2.7 years of synthetic daily observations, 6 regimes."
+      " Mock data — no FRED data found (run node --env-file=.env scripts/fetch-data.js), ~2.7 years of synthetic daily observations, 6 regimes."
     ));
     sourceNote.textContent = "synthetic fallback data";
     footerNote.textContent = "Synthetic data for illustration · Voronoi cells computed as true polygons via d3-delaunay, run locally";

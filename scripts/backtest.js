@@ -8,7 +8,7 @@
 const fs = require("fs");
 const path = require("path");
 
-const dataPath = path.join(__dirname, "data", "backtest-data.json");
+const dataPath = path.join(__dirname, "..", "data", "backtest-data.json");
 if (!fs.existsSync(dataPath)) {
   console.error("Missing data/backtest-data.json. Run:");
   console.error("  node --env-file=.env fetch-data.js 8 backtest-data");

@@ -68,7 +68,7 @@ async function main() {
 
   const payload = { generatedAt: new Date().toISOString(), days };
 
-  const outDir = path.join(__dirname, "data");
+  const outDir = path.join(__dirname, "..", "data");
   fs.mkdirSync(outDir, { recursive: true });
 
   const jsonPath = path.join(outDir, OUT_BASENAME + ".json");
