@@ -30,7 +30,7 @@ async function fetchSeries(seriesId) {
     "&file_type=json" +
     "&observation_start=" + observationStart;
 
-  const res = await fetch(url);
+  const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
   if (!res.ok) {
     throw new Error(seriesId + " request failed: " + res.status + " " + res.statusText);
   }
