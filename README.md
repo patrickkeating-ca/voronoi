@@ -1,8 +1,13 @@
 # Voronoi Fintech Explorations
 
+![Market regime Voronoi map](assets/hero-regime.png)
+
+**[Live demo →](https://patrickkeating-ca.github.io/voronoi/)**
+
 Two self-contained, no-build-step HTML/JS pages that use Voronoi diagrams
 (nearest-seed classification) as a visual/analytical device for fintech
-ideas:
+ideas. `index.html` is a small landing page linking both; open it first,
+or jump straight to either page below.
 
 - **`voronoi-robo.html`** — robo-advisor model portfolio assignment. Six
   model portfolios are seed points in (risk tolerance, time horizon) space;
@@ -24,12 +29,14 @@ scripts in `scripts/`.
 ## Layout
 
 ```
+index.html                landing page linking the two explorations below
 voronoi-robo.html      \  the two pages themselves, at repo root so
 voronoi-regime.html    /  file:// double-click still works
 vendor/d3.min.js          vendored d3-delaunay build
 scripts/fetch-data.js     FRED data puller (writes into data/)
 scripts/backtest.js       classifier backtest, reads data/backtest-data.json
 data/                     gitignored, regenerable output of fetch-data.js
+assets/                   README images
 docs/BACKTEST.md          backtest findings / known limitations
 serve.ps1                 gitignored local-only helper, see below
 ```

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Two self-contained, no-build-step HTML/JS pages that use Voronoi diagrams
 (nearest-seed classification) as a visual/analytical device for fintech
-ideas:
+ideas. `index.html` is a landing page linking both:
 
 - **`voronoi-robo.html`** — robo-advisor model portfolio assignment. Six
   model portfolios are seed points in (risk tolerance, time horizon) space;
