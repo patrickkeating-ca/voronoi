@@ -1,5 +1,7 @@
 # Voronoi Fintech Explorations
 
+[![CI](https://github.com/patrickkeating-ca/voronoi/actions/workflows/ci.yml/badge.svg)](https://github.com/patrickkeating-ca/voronoi/actions/workflows/ci.yml)
+
 ![Market regime Voronoi map](assets/hero-regime.png)
 
 **[Live demo →](https://patrickkeating-ca.github.io/voronoi/)**
@@ -40,9 +42,11 @@ scripts/backtest-returns.js   regime-tilt return backtest, writes returns-backte
 data/                         gitignored output of the fetch/backtest scripts, except
                               regime-data.js and returns-backtest-summary.js (committed
                               real-data snapshots)
+scripts/check-inline-scripts.js  syntax-checks both HTML files' inline <script> blocks
 assets/                       README images
 docs/BACKTEST.md              classifier backtest findings / known limitations
 docs/RETURNS_BACKTEST.md      regime-tilt return backtest findings / known limitations
+.github/workflows/ci.yml      runs check-inline-scripts.js + node --check on scripts/*.js
 serve.ps1                     gitignored local-only helper, see below
 ```
 
