@@ -35,7 +35,8 @@ voronoi-regime.html    /  file:// double-click still works
 vendor/d3.min.js          vendored d3-delaunay build
 scripts/fetch-data.js     FRED data puller (writes into data/)
 scripts/backtest.js       classifier backtest, reads data/backtest-data.json
-data/                     gitignored, regenerable output of fetch-data.js
+data/                     gitignored output of fetch-data.js, except
+                          regime-data.js (committed real-data snapshot)
 assets/                   README images
 docs/BACKTEST.md          backtest findings / known limitations
 serve.ps1                 gitignored local-only helper, see below
@@ -100,8 +101,13 @@ server window to stop it.
   and `VIXCLS` (VIX), inner-joins them by date, and writes both a `.json`
   and a `.js` (`window.REGIME_DATA = {...}`) version — the `.js` version is
   what the pages actually load.
-- `data/` is gitignored; it's fully regenerable from `scripts/fetch-data.js`
-  and an API key, never hand-edited.
+- `data/` is gitignored and fully regenerable from `scripts/fetch-data.js`
+  and an API key, never hand-edited — **except `data/regime-data.js`**,
+  which is deliberately committed as a real-data snapshot so the live
+  GitHub Pages demo (no backend, no API key) has something better than the
+  synthetic fallback to show. Re-run `fetch-data.js` and commit the diff
+  periodically to keep it current; `data/regime-data.json` and the
+  `backtest-data.*` files stay gitignored/local-only.
 - `voronoi-regime.html`'s regime seeds (VIX/slope coordinates + labels) were
   calibrated by hand against the *3-year* window, checking that all 6 seeds
   get non-empty populations. `scripts/backtest.js` deliberately duplicates

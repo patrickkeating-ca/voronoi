@@ -33,7 +33,8 @@ voronoi-regime.html    /  file:// double-click still works
 vendor/d3.min.js          vendored d3-delaunay build, not from a CDN
 scripts/fetch-data.js     FRED data puller (writes into data/)
 scripts/backtest.js       classifier backtest, reads data/backtest-data.json
-data/                     gitignored, regenerable output of fetch-data.js
+data/                     gitignored output of fetch-data.js, except
+                          regime-data.js (committed real-data snapshot)
 docs/BACKTEST.md          backtest findings / known limitations
 serve.ps1                 gitignored local-only helper (see README.md)
 ```
@@ -77,8 +78,12 @@ added later, or LAN testing.
   `VIXCLS` (VIX), inner-joins them by date, and writes both a `.json` and
   a `.js` (`window.REGIME_DATA = {...}`) version — the `.js` version is
   what the pages actually load.
-- `data/` is gitignored; it's fully regenerable from `scripts/fetch-data.js`
-  and an API key, never hand-edited.
+- `data/` is gitignored and fully regenerable from `scripts/fetch-data.js`
+  and an API key, never hand-edited — **except `data/regime-data.js`**,
+  committed on purpose as a real-data snapshot for the live GitHub Pages
+  demo, which has no backend/API key to fetch with. Re-run
+  `fetch-data.js` and commit the diff periodically to refresh it;
+  `data/regime-data.json` and `backtest-data.*` stay gitignored/local-only.
 - `voronoi-regime.html`'s regime seeds (VIX/slope coordinates + labels) were
   calibrated by hand against the *3-year* window, checking that all 6 seeds
   get non-empty populations (see conversation/commit history for the actual
