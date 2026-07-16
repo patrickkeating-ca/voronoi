@@ -34,6 +34,8 @@ scripts in `scripts/`.
 index.html                landing page linking the two explorations below
 voronoi-robo.html      \  the two pages themselves, at repo root so
 voronoi-regime.html    /  file:// double-click still works
+shared.css                CSS common to both pages; each keeps its own
+                          <style> block for layout-specific rules
 vendor/d3.min.js          vendored d3-delaunay build
 scripts/fetch-data.js         FRED data puller (writes into data/)
 scripts/backtest.js           classifier backtest, reads data/backtest-data.json
@@ -159,6 +161,16 @@ selection) from the same `data/regime-data.js` file. There is no shared
 module — if the regime seeds/domain in `voronoi-regime.html` are changed,
 the duplicated copy inside `voronoi-robo.html`'s `<script>` must be updated
 to match, or the two pages' idea of "today's regime" will diverge silently.
+
+## Shared stylesheet
+
+The two pages' CSS was ~80% line-for-line identical (color tokens, resets,
+tooltip, ledger, portfolio-card, and button styles), so the common part now
+lives in `shared.css`, loaded via `<link rel="stylesheet" href="./shared.css">`
+in both files — `<link>` isn't subject to the `file://` CORS restriction
+that rules out `fetch()` above, so this still needs no server. Each page's
+own `<style>` block keeps only what genuinely differs (layout, and
+components only one page has).
 
 See `CLAUDE.md` for more implementation details (theming system, sanity
 checks, etc.) intended for whoever (human or AI) is editing this code.
