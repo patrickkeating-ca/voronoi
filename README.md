@@ -33,13 +33,17 @@ index.html                landing page linking the two explorations below
 voronoi-robo.html      \  the two pages themselves, at repo root so
 voronoi-regime.html    /  file:// double-click still works
 vendor/d3.min.js          vendored d3-delaunay build
-scripts/fetch-data.js     FRED data puller (writes into data/)
-scripts/backtest.js       classifier backtest, reads data/backtest-data.json
-data/                     gitignored output of fetch-data.js, except
-                          regime-data.js (committed real-data snapshot)
-assets/                   README images
-docs/BACKTEST.md          backtest findings / known limitations
-serve.ps1                 gitignored local-only helper, see below
+scripts/fetch-data.js         FRED data puller (writes into data/)
+scripts/backtest.js           classifier backtest, reads data/backtest-data.json
+scripts/fetch-returns-data.js SPY/AGG/GLD/BIL returns puller (Yahoo, writes into data/)
+scripts/backtest-returns.js   regime-tilt return backtest, writes returns-backtest-summary.*
+data/                         gitignored output of the fetch/backtest scripts, except
+                              regime-data.js and returns-backtest-summary.js (committed
+                              real-data snapshots)
+assets/                       README images
+docs/BACKTEST.md              classifier backtest findings / known limitations
+docs/RETURNS_BACKTEST.md      regime-tilt return backtest findings / known limitations
+serve.ps1                     gitignored local-only helper, see below
 ```
 
 ## Quick start
@@ -57,6 +61,8 @@ To see real market data instead of the synthetic fallback, fetch it first
 node --env-file=.env scripts/fetch-data.js                    # fetch 3yr FRED data -> data/regime-data.{json,js}
 node --env-file=.env scripts/fetch-data.js 8 backtest-data     # fetch 8yr data -> data/backtest-data.{json,js}
 node scripts/backtest.js                                       # run classifier vs. data/backtest-data.json, print findings
+node scripts/fetch-returns-data.js                              # fetch 3yr SPY/AGG/GLD/BIL returns -> data/returns-data.{json,js}
+node scripts/backtest-returns.js                                # regime-tilt vs. static backtest, writes returns-backtest-summary.{json,js}
 ```
 
 Requires:
@@ -64,11 +70,13 @@ Requires:
 - Node 20.6+ (for `--env-file`)
 - A FRED API key in `.env` at the repo root — copy `.env.example` to `.env`
   and fill in `FRED_API_KEY=` (get a free key at
-  https://fred.stlouisfed.org/docs/api/api_key.html)
+  https://fred.stlouisfed.org/docs/api/api_key.html) — only needed for
+  `fetch-data.js`; `fetch-returns-data.js` hits Yahoo Finance and needs no key
 
 `scripts/fetch-data.js` takes optional `[yearsBack] [outBasename]` args so a
 longer historical pull (for backtesting) doesn't clobber the live map's
-3-year `regime-data.json`/`.js`.
+3-year `regime-data.json`/`.js`. `scripts/fetch-returns-data.js` takes the
+same args.
 
 ## Running a local server (`serve.ps1`)
 
@@ -125,6 +133,18 @@ server window to stop it.
   generalize to longer history — e.g. it misses the real, shallow 2019
   yield-curve inversion, and collapses very different volatility spikes
   (VIX 35 vs. 82) into the same "Shock Selloff" label.
+- `scripts/fetch-returns-data.js` pulls daily dividend/split-adjusted prices
+  for SPY/AGG/GLD/BIL (the equity/bond/gold/cash tilt legs) from Yahoo
+  Finance's unofficial chart endpoint — the one deliberate exception to the
+  FRED-only pipeline above, since FRED no longer carries a spot gold price
+  series. `scripts/backtest-returns.js` then simulates a static buy-and-hold
+  portfolio against one rebalanced daily to the classified regime's tilt,
+  and writes a small precomputed headline
+  (`data/returns-backtest-summary.js`) that `voronoi-robo.html` shows as a
+  ledger stat. `refresh-data.yml` reruns both daily alongside the regime
+  data. **Read `docs/RETURNS_BACKTEST.md` before trusting that number** —
+  it's one 3-year window, one starting regime, and ignores transaction
+  costs entirely.
 
 ## Cross-file coupling
 

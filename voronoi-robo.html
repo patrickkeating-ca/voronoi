@@ -1,6 +1,7 @@
 <title>Nearest Model — Robo-Advisor Voronoi Map</title>
 <link rel="icon" type="image/x-icon" href="./favicon.ico">
 <script src="./data/regime-data.js"></script>
+<script src="./data/returns-backtest-summary.js"></script>
 <script src="./vendor/d3.min.js"></script>
 <style>
   :root {
@@ -166,7 +167,7 @@
     z-index: 5;
   }
   :root[data-theme="dark"] .tooltip, @media (prefers-color-scheme: dark) { }
-  .tooltip .tt-tag { color: var(--accent); }
+  .tooltip .tt-tag { font-weight: 600; }
   .tooltip.visible { opacity: 1; }
 
   /* Regime overlay selector */
@@ -282,14 +283,11 @@
   .ledger {
     margin-top: 1.5rem;
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
     border: 1px solid var(--line);
     border-radius: 4px;
     overflow: hidden;
     background: var(--card-bg);
-  }
-  @media (max-width: 700px) {
-    .ledger { grid-template-columns: repeat(2, 1fr); }
   }
   .ledger-cell {
     padding: 0.85rem 1rem;
@@ -311,6 +309,13 @@
     color: var(--ink);
   }
   .ledger-value small { font-size: 0.7rem; color: var(--ink-soft); font-weight: 400; }
+  .ledger-desc {
+    font-family: var(--font-mono);
+    font-size: 0.64rem;
+    color: var(--ink-soft);
+    margin-top: 0.3rem;
+    line-height: 1.35;
+  }
 
   /* Explainer */
   .explainer {
@@ -843,15 +848,25 @@
     var ov = REGIME_OVERLAYS[selectedOverlayIdx];
     var reassigned = clients.filter(function (c) { return c.cell !== neutralCellByClientId[c.id]; }).length;
     var ledgerData = [
-      ["regime overlay", ov.name + " (" + (ov.shift > 0 ? "+" : "") + ov.shift + ")"],
-      ["contestable clients", contestableCount + " (" + Math.round(100 * contestableCount / N) + "%)"],
-      ["reassigned vs. neutral", reassigned + " (" + Math.round(100 * reassigned / N) + "%)"],
-      ["most contested boundary", mostContested]
+      ["regime overlay", ov.name + " (" + (ov.shift > 0 ? "+" : "") + ov.shift + ")", null],
+      ["contestable clients", contestableCount + " (" + Math.round(100 * contestableCount / N) + "%)", null],
+      ["reassigned vs. neutral", reassigned + " (" + Math.round(100 * reassigned / N) + "%)", null],
+      ["most contested boundary", mostContested, null]
     ];
+    var rb = window.RETURNS_BACKTEST_SUMMARY;
+    if (rb) {
+      ledgerData.push([
+        "regime tilt backtest",
+        (rb.adaptive.total * 100).toFixed(0) + "% adaptive vs " + (rb.static.total * 100).toFixed(0) + "% static",
+        "real SPY/AGG/GLD/BIL returns, " + rb.range.years.toFixed(1) + "y, rebalanced to the classified regime's tilt " +
+          "each day vs. buy-and-hold at the day-1 tilt (see docs/RETURNS_BACKTEST.md)"
+      ]);
+    }
     ledgerData.forEach(function (row) {
       var cell = document.createElement("div");
       cell.className = "ledger-cell";
-      cell.innerHTML = '<div class="ledger-label">' + row[0] + '</div><div class="ledger-value">' + row[1] + '</div>';
+      cell.innerHTML = '<div class="ledger-label">' + row[0] + '</div><div class="ledger-value">' + row[1] + '</div>' +
+        (row[2] ? '<div class="ledger-desc">' + row[2] + '</div>' : '');
       ledger.appendChild(cell);
     });
   }
@@ -896,7 +911,9 @@
   var footerNoteEl = document.getElementById("footerNote");
   if (liveRegimeName) {
     footerNoteEl.textContent = "Synthetic client data · regime overlay reads real FRED-derived classification " +
-      "(as of " + liveRegimeAsOf + ") from data/regime-data.js · Voronoi cells computed as true polygons via d3-delaunay";
+      "(as of " + liveRegimeAsOf + ") from data/regime-data.js" +
+      (window.RETURNS_BACKTEST_SUMMARY ? " · regime tilt backtest uses real SPY/AGG/GLD/BIL returns (Yahoo Finance), see docs/RETURNS_BACKTEST.md" : "") +
+      " · Voronoi cells computed as true polygons via d3-delaunay";
   }
 
   applyOverlay(defaultOverlayIdx);
