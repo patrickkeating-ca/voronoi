@@ -569,6 +569,7 @@
       var d = regimes.map(function (r) { return distSq(c.vix, c.slope, r.vix, r.slope); });
       var order = d.map(function (v, i2) { return i2; }).sort(function (a, b) { return d[a] - d[b]; });
       c.cell = order[0];
+      c.secondId = order[1];
       c.nearest = Math.sqrt(d[order[0]]);
       c.second = Math.sqrt(d[order[1]]);
       c.contestable = (c.second - c.nearest) < 0.05;
@@ -602,6 +603,20 @@
   }
 
   classifyDays();
+
+  // ---------- soft/probabilistic blend for turning-point days ----------
+  // Inverse-distance weighting between nearest and second-nearest only —
+  // exact-on-seed collapses to 100/0, equidistant collapses to 50/50.
+  function blendPct(c) {
+    var total = c.nearest + c.second;
+    var pPrimary = total === 0 ? 100 : Math.round(100 * c.second / total);
+    return { primary: pPrimary, secondary: 100 - pPrimary };
+  }
+  function blendLabel(c) {
+    var pct = blendPct(c);
+    return pct.primary + "% " + regimes[c.cell].name + " / " +
+      pct.secondary + "% " + regimes[c.secondId].name;
+  }
 
   // ---------- canvas setup ----------
   var canvas = document.getElementById("map");
@@ -939,7 +954,7 @@
         fmtDate(closest.date) + (closestIdx === todayIdx ? " · today" : "") + "<br>" +
         "VIX " + closest.vix.toFixed(1) + " · slope " + closest.slope.toFixed(2) + "%<br>" +
         "<span class=\"tt-tag\">→ " + r.name + "</span>" +
-        (closest.contestable ? "<br><span class=\"tt-tag\">turning point</span>" : "");
+        (closest.contestable ? "<br><span class=\"tt-tag\">" + blendLabel(closest) + "</span>" : "");
       tooltip.classList.add("visible");
     } else {
       tooltip.classList.remove("visible");
@@ -1048,9 +1063,11 @@
   var ledger = document.getElementById("ledger");
   function renderLedger() {
     ledger.innerHTML = "";
+    var todayContestable = days[todayIdx].contestable;
     var ledgerData = [
-      ["current regime", regimes[currentRegime].name,
-        null, daysSinceChange + (daysSinceChange === 1 ? " day" : " days") + " in this regime"],
+      ["current regime", todayContestable ? blendLabel(days[todayIdx]) : regimes[currentRegime].name,
+        todayContestable ? "today's reading sits almost equidistant from two seeds — shown as a blend rather than a single call" : null,
+        daysSinceChange + (daysSinceChange === 1 ? " day" : " days") + " in this regime"],
       ["turning-point days", contestableCount + " (" + Math.round(100 * contestableCount / days.length) + "%)",
         "days whose 2nd-nearest regime is nearly as close (within 0.05) — the classification could easily flip", null],
       ["most contested boundary", mostContested, null, null]
