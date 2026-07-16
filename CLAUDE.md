@@ -81,9 +81,13 @@ added later, or LAN testing.
 - `data/` is gitignored and fully regenerable from `scripts/fetch-data.js`
   and an API key, never hand-edited — **except `data/regime-data.js`**,
   committed on purpose as a real-data snapshot for the live GitHub Pages
-  demo, which has no backend/API key to fetch with. Re-run
-  `fetch-data.js` and commit the diff periodically to refresh it;
+  demo, which has no backend/API key to fetch with.
   `data/regime-data.json` and `backtest-data.*` stay gitignored/local-only.
+- `.github/workflows/refresh-data.yml` keeps that snapshot current: a
+  daily scheduled Action re-runs `scripts/fetch-data.js` (needs a
+  `FRED_API_KEY` repo secret) and commits `data/regime-data.js` if it
+  changed. Don't hand-edit the snapshot — let the workflow (or a manual
+  `fetch-data.js` run + commit) own it.
 - `voronoi-regime.html`'s regime seeds (VIX/slope coordinates + labels) were
   calibrated by hand against the *3-year* window, checking that all 6 seeds
   get non-empty populations (see conversation/commit history for the actual
