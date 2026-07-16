@@ -11,6 +11,10 @@
     --accent-ink: #eef7f5;
     --card-bg: #f7f8f6;
     --shadow: 0 1px 0 rgba(20,25,27,0.06);
+    /* tooltip bg/text use --ink/--paper, which invert per theme; --accent
+       doesn't, so it goes low-contrast in one theme. This is deliberately
+       the *other* theme's --accent, for use only inside the tooltip. */
+    --tooltip-accent: #4fb3a4;
 
     --c1: #3c6e8f; /* Goldilocks */
     --c2: #4f9188; /* Melt-Up / Euphoria */
@@ -35,6 +39,7 @@
       --accent-ink: #0d1a18;
       --card-bg: #171d21;
       --shadow: 0 1px 0 rgba(0,0,0,0.4);
+      --tooltip-accent: #1b6b63;
 
       --c1: #6fa2c4; --c2: #6fbdb0; --c3: #a3c47c; --c4: #e0b95c; --c5: #e0955c; --c6: #d4726a;
     }
@@ -42,11 +47,13 @@
   :root[data-theme="dark"] {
     --paper: #12161a; --paper-2: #191f24; --ink: #e9edea; --ink-soft: #9aa6a1; --line: #2b3339;
     --accent: #4fb3a4; --accent-ink: #0d1a18; --card-bg: #171d21; --shadow: 0 1px 0 rgba(0,0,0,0.4);
+    --tooltip-accent: #1b6b63;
     --c1: #6fa2c4; --c2: #6fbdb0; --c3: #a3c47c; --c4: #e0b95c; --c5: #e0955c; --c6: #d4726a;
   }
   :root[data-theme="light"] {
     --paper: #eef1ef; --paper-2: #e3e7e4; --ink: #14191b; --ink-soft: #4b5451; --line: #c7cec9;
     --accent: #1b6b63; --accent-ink: #eef7f5; --card-bg: #f7f8f6; --shadow: 0 1px 0 rgba(20,25,27,0.06);
+    --tooltip-accent: #4fb3a4;
     --c1: #3c6e8f; --c2: #4f9188; --c3: #7fa65c; --c4: #c99a3e; --c5: #cc7a3c; --c6: #b8483f;
   }
 
@@ -159,7 +166,8 @@
     transition: opacity 0.1s ease;
     z-index: 5;
   }
-  .tooltip .tt-tag { color: var(--accent); }
+  .tooltip .tt-tag { color: var(--tooltip-accent); }
+  .tooltip .tt-blend { color: var(--paper); opacity: 0.85; }
   .tooltip.visible { opacity: 1; }
 
   .sidebar {
@@ -980,7 +988,7 @@
         fmtDate(closest.date) + (closestIdx === todayIdx ? " · today" : "") + "<br>" +
         "VIX " + closest.vix.toFixed(1) + " · slope " + closest.slope.toFixed(2) + "%<br>" +
         "<span class=\"tt-tag\">→ " + r.name + "</span>" +
-        (closest.contestable ? "<br><span class=\"tt-tag\">" + blendLabel(closest) + "</span>" : "");
+        (closest.contestable ? "<br><span class=\"tt-blend\">" + blendLabel(closest) + "</span>" : "");
       tooltip.classList.add("visible");
     } else {
       tooltip.classList.remove("visible");
