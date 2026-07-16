@@ -365,6 +365,23 @@
   @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; }
   }
+
+  .table-scroll { overflow-x: auto; margin-top: 0.6rem; }
+  table.transition-table {
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    width: 100%;
+  }
+  .transition-table th, .transition-table td {
+    padding: 0.3rem 0.45rem;
+    text-align: center;
+    border: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  .transition-table thead th { font-weight: 600; color: var(--ink-soft); }
+  .transition-table tbody th { text-align: left; font-weight: 600; color: var(--ink-soft); }
+  .transition-table td.diag { font-weight: 700; color: var(--ink); }
 </style>
 
 <div class="wrap">
@@ -398,6 +415,15 @@
     <summary>Regimes &amp; tilts</summary>
     <button class="reset-btn" id="resetBtn" style="margin-top:0.6rem;">show all</button>
     <div id="cards"></div>
+  </details>
+
+  <details class="sidebar">
+    <summary>Regime transition matrix</summary>
+    <p class="map-note" style="margin:0.6rem 0 0;">
+      P(next trading day's regime = column | today's regime = row), tallied
+      from every day-over-day transition in the plotted history above.
+    </p>
+    <div class="table-scroll"><div id="transitionMatrix"></div></div>
   </details>
 
   <header class="masthead">
@@ -903,7 +929,7 @@
 
   drawVoronoi();
 
-  function redrawForTheme() { drawVoronoi(); renderLedger(); }
+  function redrawForTheme() { drawVoronoi(); renderLedger(); renderTransitionMatrix(); }
   var mo = new MutationObserver(redrawForTheme);
   mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   if (window.matchMedia) {
@@ -1089,6 +1115,43 @@
   }
   renderLedger();
 
+  // ---------- regime transition matrix ----------
+  var transitionEl = document.getElementById("transitionMatrix");
+
+  function computeTransitionCounts() {
+    var n = regimes.length;
+    var counts = regimes.map(function () { return new Array(n).fill(0); });
+    for (var i = 0; i < days.length - 1; i++) counts[days[i].cell][days[i + 1].cell]++;
+    return counts;
+  }
+
+  function renderTransitionMatrix() {
+    var counts = computeTransitionCounts();
+    var rowTotals = counts.map(function (row) { return row.reduce(function (a, b) { return a + b; }, 0); });
+
+    var html = '<table class="transition-table"><thead><tr><th></th>' +
+      regimes.map(function (r) {
+        return '<th title="' + r.name + '">' + r.name.split(" ")[0] + '</th>';
+      }).join("") +
+      '</tr></thead><tbody>';
+
+    regimes.forEach(function (r, i) {
+      html += '<tr><th title="' + r.name + '">' + r.name.split(" ")[0] + '</th>';
+      regimes.forEach(function (c, j) {
+        var p = rowTotals[i] ? counts[i][j] / rowTotals[i] : 0;
+        var pct = Math.round(p * 100);
+        var rgb = hexToRgb(resolveColor(c.cssVar));
+        var bg = "rgba(" + rgb.join(",") + "," + (0.06 + 0.7 * p).toFixed(2) + ")";
+        html += '<td style="background:' + bg + ';" class="' + (i === j ? "diag" : "") + '">' +
+          (rowTotals[i] ? pct + "%" : "&middot;") + "</td>";
+      });
+      html += "</tr>";
+    });
+    html += "</tbody></table>";
+    transitionEl.innerHTML = html;
+  }
+  renderTransitionMatrix();
+
   // ---------- drag-to-reposition regime seeds ----------
   var SEED_HIT_RADIUS = 11; // canvas px
   var dragging = null;
@@ -1108,6 +1171,7 @@
     classifyDays();
     renderCards();
     renderLedger();
+    renderTransitionMatrix();
     drawVoronoi();
   }
 
