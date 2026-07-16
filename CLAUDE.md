@@ -30,6 +30,9 @@ scripts in `scripts/`.
 ```
 voronoi-robo.html      \  the two pages themselves, at repo root so
 voronoi-regime.html    /  file:// double-click still works
+shared.css                CSS common to both pages (tokens, resets, shared
+                          components); each page keeps a smaller <style>
+                          block for its own layout-specific rules
 vendor/d3.min.js          vendored d3-delaunay build, not from a CDN
 scripts/fetch-data.js         FRED data puller (writes into data/)
 scripts/backtest.js           classifier backtest, reads data/backtest-data.json
@@ -155,3 +158,15 @@ hosting environment, e.g. Claude Artifacts) to win over the media query in
 both directions. `--c1`..`--c6` are the six-way categorical palette (one
 hue per seed/regime); they differ in meaning between the two files (model
 portfolios vs. regimes) despite sharing variable names.
+
+The tokens above, plus every component style that's identical between the
+two pages (base resets, `.map-panel`, `.tooltip`, `.portfolio-card`,
+`.ledger-*`, `.explainer h3`/`p`, `footer`, buttons), live in `shared.css`,
+loaded via `<link rel="stylesheet" href="./shared.css">` in both files —
+`<link>` isn't subject to the `file://` CORS restriction that rules out
+`fetch()` (see "Running the pages" above), so this doesn't require a
+server. Each page's own `<style>` block keeps only what genuinely differs:
+layout (`.floor`, `.explainer`'s grid-template-columns), and components
+only one page has (the regime page's `.sidebar`/`.trail-controls`/
+`.transition-table`, the robo page's `.overlay-panel`). If a rule looks
+identical in both files, it belongs in `shared.css`, not duplicated.
