@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Check inline <script> syntax (voronoi-robo.html, voronoi-regime.html)
+        run: node scripts/check-inline-scripts.js
+
+      - name: Check scripts/*.js syntax
+        run: |
+          for f in scripts/*.js; do
+            echo "node --check $f"
+            node --check "$f"
+          done

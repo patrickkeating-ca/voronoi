@@ -39,8 +39,10 @@ scripts/backtest-returns.js   regime-tilt return backtest, reads data/regime-dat
 data/                         gitignored output of the fetch/backtest scripts, except
                               regime-data.js and returns-backtest-summary.js (committed
                               real-data snapshots)
+scripts/check-inline-scripts.js  syntax-checks both HTML files' inline <script> blocks
 docs/BACKTEST.md              classifier backtest findings / known limitations
 docs/RETURNS_BACKTEST.md      regime-tilt return backtest findings / known limitations
+.github/workflows/ci.yml      runs check-inline-scripts.js + node --check on scripts/*.js
 serve.ps1                     gitignored local-only helper (see README.md)
 ```
 
@@ -66,9 +68,11 @@ relative to their own file (`path.join(__dirname, "..", "data")`), so they
 must stay one level below the repo root in `scripts/`.
 
 There is no lint, test suite, or build step. To sanity-check a page after
-editing its inline `<script>`, extract it and run `node --check` on it (see
-git history for the exact one-liner used throughout this project) — this
-catches syntax errors without needing a browser.
+editing its inline `<script>`, run `node scripts/check-inline-scripts.js` —
+it extracts each HTML file's last `<script>` block and syntax-checks it with
+`vm.Script` (same parser as `node --check`), without needing a browser.
+`.github/workflows/ci.yml` runs this plus `node --check` on every
+`scripts/*.js` file on every push and PR.
 
 ## Running the pages
 
