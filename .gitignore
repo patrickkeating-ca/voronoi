@@ -1,4 +1,5 @@
 .env
 data/*
 !data/regime-data.js
+!data/returns-backtest-summary.js
 serve.ps1

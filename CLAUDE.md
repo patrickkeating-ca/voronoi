@@ -31,12 +31,17 @@ scripts in `scripts/`.
 voronoi-robo.html      \  the two pages themselves, at repo root so
 voronoi-regime.html    /  file:// double-click still works
 vendor/d3.min.js          vendored d3-delaunay build, not from a CDN
-scripts/fetch-data.js     FRED data puller (writes into data/)
-scripts/backtest.js       classifier backtest, reads data/backtest-data.json
-data/                     gitignored output of fetch-data.js, except
-                          regime-data.js (committed real-data snapshot)
-docs/BACKTEST.md          backtest findings / known limitations
-serve.ps1                 gitignored local-only helper (see README.md)
+scripts/fetch-data.js         FRED data puller (writes into data/)
+scripts/backtest.js           classifier backtest, reads data/backtest-data.json
+scripts/fetch-returns-data.js SPY/AGG/GLD/BIL returns puller (Yahoo, writes into data/)
+scripts/backtest-returns.js   regime-tilt return backtest, reads data/regime-data.json
+                              + data/returns-data.json, writes returns-backtest-summary.*
+data/                         gitignored output of the fetch/backtest scripts, except
+                              regime-data.js and returns-backtest-summary.js (committed
+                              real-data snapshots)
+docs/BACKTEST.md              classifier backtest findings / known limitations
+docs/RETURNS_BACKTEST.md      regime-tilt return backtest findings / known limitations
+serve.ps1                     gitignored local-only helper (see README.md)
 ```
 
 ## Commands
@@ -45,6 +50,8 @@ serve.ps1                 gitignored local-only helper (see README.md)
 node --env-file=.env scripts/fetch-data.js                    # fetch 3yr FRED data -> data/regime-data.{json,js}
 node --env-file=.env scripts/fetch-data.js 8 backtest-data     # fetch 8yr data -> data/backtest-data.{json,js}
 node scripts/backtest.js                                       # run classifier vs. data/backtest-data.json, print findings
+node scripts/fetch-returns-data.js                              # fetch 3yr SPY/AGG/GLD/BIL returns -> data/returns-data.{json,js}
+node scripts/backtest-returns.js                                # regime-tilt vs. static backtest, writes returns-backtest-summary.{json,js}
 .\serve.ps1                                             # optional: npx serve + open browser (see below)
 .\serve.ps1 -Port 8080 -Page voronoi-robo.html
 ```
@@ -52,9 +59,11 @@ node scripts/backtest.js                                       # run classifier 
 `fetch-data.js` requires `FRED_API_KEY` in `.env` (see `.env.example`) and
 Node 20.6+ for `--env-file`. It takes optional `[yearsBack] [outBasename]`
 args so a longer historical pull (for backtesting) doesn't clobber the live
-map's 3-year `regime-data.json`/`.js`. Both scripts resolve `data/` relative
-to their own file (`path.join(__dirname, "..", "data")`), so they must stay
-one level below the repo root in `scripts/`.
+map's 3-year `regime-data.json`/`.js`. `fetch-returns-data.js` needs no key
+(it hits Yahoo Finance, not FRED — see Data pipeline below) and takes the
+same `[yearsBack] [outBasename]` args. All four scripts resolve `data/`
+relative to their own file (`path.join(__dirname, "..", "data")`), so they
+must stay one level below the repo root in `scripts/`.
 
 There is no lint, test suite, or build step. To sanity-check a page after
 editing its inline `<script>`, extract it and run `node --check` on it (see
@@ -101,6 +110,23 @@ added later, or LAN testing.
   yield-curve inversion, and collapses very different volatility spikes
   (VIX 35 vs. 82) into the same "Shock Selloff" label. If you're asked to
   make the classification more robust, read `docs/BACKTEST.md` first.
+- `scripts/fetch-returns-data.js` pulls daily dividend/split-adjusted prices
+  for SPY/AGG/GLD/BIL (the equity/bond/gold/cash tilt legs) from **Yahoo
+  Finance's unofficial chart endpoint**, not FRED — the one deliberate
+  exception to the FRED-only pipeline above, because FRED no longer carries
+  a spot gold price series. If that endpoint ever breaks, this is the only
+  script that needs fixing; nothing else in the repo depends on it.
+- `scripts/backtest-returns.js` duplicates `voronoi-regime.html`'s regime
+  seeds/tilts (same pattern as `backtest.js` duplicating the classifier) to
+  simulate a static buy-and-hold portfolio against one rebalanced daily to
+  the classified regime's tilt, using real returns. It writes
+  `returns-backtest-summary.{json,js}` — a small precomputed headline (not
+  the raw daily data) that `voronoi-robo.html` loads directly and shows as a
+  ledger stat. Read `docs/RETURNS_BACKTEST.md` before trusting that number:
+  it's one 3-year window with one starting regime and no transaction costs.
+- `.github/workflows/refresh-data.yml` also reruns `fetch-returns-data.js` +
+  `backtest-returns.js` daily and commits `returns-backtest-summary.js` if
+  it changed, alongside `regime-data.js`.
 
 ## Cross-file coupling
 
@@ -111,6 +137,9 @@ selection) from the same `data/regime-data.js` file. There is no shared
 module — if the regime seeds/domain in `voronoi-regime.html` are changed,
 the duplicated copy inside `voronoi-robo.html`'s `<script>` must be updated
 to match, or the two pages' idea of "today's regime" will diverge silently.
+`scripts/backtest-returns.js` duplicates the same seeds/tilts a third time
+(same reasoning as `scripts/backtest.js`) — a fourth place to update if the
+regimes ever change.
 
 ## Theming
 
