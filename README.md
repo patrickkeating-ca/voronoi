@@ -17,6 +17,7 @@ or jump straight to either page below.
   overlay" selector shifts every portfolio's risk coordinate at once (based
   on today's real market regime, or a chosen counterfactual) and reports how
   many clients get reassigned without answering a single new question.
+  Seeds are also draggable, live-recomputing cells and reclassification.
 - **`voronoi-regime.html`** — market regime classification over VIX × 10Y-2Y
   yield curve slope. Six regimes are seeds; each trading day is classified
   to the nearest one. Uses real FRED data when available

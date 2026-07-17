@@ -392,7 +392,7 @@
   function fromPx(px, py) {
     var risk = DOMAIN_X[0] + (px - PAD.l) / plotW * (DOMAIN_X[1] - DOMAIN_X[0]);
     var horizon = DOMAIN_Y[0] + (plotH - (py - PAD.t)) / plotH * (DOMAIN_Y[1] - DOMAIN_Y[0]);
-    return [risk, horizon];
+    return [clamp(risk, DOMAIN_X[0], DOMAIN_X[1]), clamp(horizon, DOMAIN_Y[0], DOMAIN_Y[1])];
   }
 
   function resolveColor(varName) {
@@ -476,18 +476,20 @@
     portfolios.forEach(function (p) {
       var pt = toPx(p.risk, p.horizon);
       var dim = (activeCell !== null && activeCell !== p.id);
+      var isDragging = (dragging === p);
+      var radius = isDragging ? 9.5 : 7;
       ctx.globalAlpha = dim ? 0.3 : 1;
       ctx.beginPath();
-      ctx.arc(pt[0], pt[1], 7, 0, Math.PI * 2);
+      ctx.arc(pt[0], pt[1], radius, 0, Math.PI * 2);
       ctx.fillStyle = resolveColor(p.cssVar);
       ctx.fill();
       ctx.lineWidth = 2;
       ctx.strokeStyle = resolveColor('--paper');
       ctx.stroke();
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = resolveColor('--ink');
+      ctx.lineWidth = isDragging ? 2 : 1;
+      ctx.strokeStyle = resolveColor(isDragging ? '--accent' : '--ink');
       ctx.beginPath();
-      ctx.arc(pt[0], pt[1], 7, 0, Math.PI * 2);
+      ctx.arc(pt[0], pt[1], radius, 0, Math.PI * 2);
       ctx.stroke();
       ctx.globalAlpha = 1;
     });
@@ -531,9 +533,26 @@
   }
 
   canvas.addEventListener("mousemove", function (e) {
+    if (dragging) return; // the drag handler below owns the tooltip/cursor while active
+
     var s = canvasScale();
     var mx = (e.clientX - s.rect.left) * s.sx;
     var my = (e.clientY - s.rect.top) * s.sy;
+
+    var hoverSeed = seedAt(mx, my);
+    canvas.style.cursor = hoverSeed ? "grab" : "crosshair";
+    if (hoverSeed) {
+      var spt = toPx(hoverSeed.risk, hoverSeed.horizon);
+      tooltip.style.left = (spt[0] / s.sx) + "px";
+      tooltip.style.top = (spt[1] / s.sy) + "px";
+      tooltip.innerHTML =
+        "<span class=\"tt-tag\">" + hoverSeed.name + "</span><br>" +
+        "risk " + hoverSeed.risk.toFixed(0) + " · horizon " + hoverSeed.horizon.toFixed(1) + "y<br>" +
+        "drag to reposition";
+      tooltip.classList.add("visible");
+      return;
+    }
+
     var closest = null, closestD = Infinity;
     clients.forEach(function (c) {
       var pt = toPx(c.risk, c.horizon);
@@ -556,7 +575,9 @@
       tooltip.classList.remove("visible");
     }
   });
-  canvas.addEventListener("mouseleave", function () { tooltip.classList.remove("visible"); });
+  canvas.addEventListener("mouseleave", function () {
+    if (!dragging) tooltip.classList.remove("visible");
+  });
 
   // ---------- sidebar cards ----------
   var cardsEl = document.getElementById("cards");
@@ -676,6 +697,74 @@
   } else {
     overlayLiveNoteEl.textContent = "no live regime data found -- run the regime map's scripts/fetch-data.js first";
   }
+
+  // ---------- drag-to-reposition portfolio seeds ----------
+  var SEED_HIT_RADIUS = 11; // canvas px
+  var dragging = null;
+
+  function seedAt(mx, my) {
+    var best = null, bestD = Infinity;
+    portfolios.forEach(function (p) {
+      var pt = toPx(p.risk, p.horizon);
+      var d = (pt[0] - mx) * (pt[0] - mx) + (pt[1] - my) * (pt[1] - my);
+      if (d < bestD) { bestD = d; best = p; }
+    });
+    return (best && bestD < SEED_HIT_RADIUS * SEED_HIT_RADIUS) ? best : null;
+  }
+
+  function refreshAfterMove() {
+    rebuildVoronoi();
+    reclassifyClients();
+    renderCards();
+    renderLedger();
+    drawVoronoi();
+  }
+
+  canvas.addEventListener("mousedown", function (e) {
+    var s = canvasScale();
+    var mx = (e.clientX - s.rect.left) * s.sx;
+    var my = (e.clientY - s.rect.top) * s.sy;
+    var hit = seedAt(mx, my);
+    if (hit) {
+      dragging = hit;
+      canvas.style.cursor = "grabbing";
+      tooltip.classList.remove("visible");
+      e.preventDefault();
+    }
+  });
+
+  window.addEventListener("mousemove", function (e) {
+    if (!dragging) return;
+    var s = canvasScale();
+    var mx = (e.clientX - s.rect.left) * s.sx;
+    var my = (e.clientY - s.rect.top) * s.sy;
+    var v = fromPx(mx, my);
+    // dragging repositions the portfolio's *neutral* location: back out
+    // whatever overlay shift is currently applied so the seed stays put
+    // under the shift you're looking at, and other overlays keep shifting
+    // relative to the new neutral spot -- otherwise the next overlay click
+    // would silently snap the seed back to its pre-drag position.
+    var currentShift = REGIME_OVERLAYS[selectedOverlayIdx].shift;
+    dragging.baseRisk = clamp(v[0] - currentShift, DOMAIN_X[0], DOMAIN_X[1]);
+    dragging.risk = v[0];
+    dragging.horizon = v[1];
+    refreshAfterMove();
+
+    var pt = toPx(dragging.risk, dragging.horizon);
+    tooltip.style.left = (pt[0] / s.sx) + "px";
+    tooltip.style.top = (pt[1] / s.sy) + "px";
+    tooltip.innerHTML =
+      "<span class=\"tt-tag\">" + dragging.name + "</span><br>" +
+      "risk " + dragging.risk.toFixed(0) + " · horizon " + dragging.horizon.toFixed(1) + "y";
+    tooltip.classList.add("visible");
+  });
+
+  window.addEventListener("mouseup", function () {
+    if (!dragging) return;
+    dragging = null;
+    canvas.style.cursor = "crosshair";
+    tooltip.classList.remove("visible");
+  });
 
   // ---------- data provenance ----------
   var footerNoteEl = document.getElementById("footerNote");
