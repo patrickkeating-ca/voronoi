@@ -3,6 +3,7 @@
 <link rel="stylesheet" href="./shared.css">
 <script src="./data/regime-data.js"></script>
 <script src="./data/returns-backtest-summary.js"></script>
+<script src="./data/robo-returns-backtest-summary.js"></script>
 <script src="./vendor/d3.min.js"></script>
 <style>
   /* Masthead */
@@ -175,6 +176,16 @@
 
   <div class="ledger" id="ledger"></div>
 
+  <details class="collapsible" style="margin-top:1.5rem;">
+    <summary>Cross-regime reassignment matrix</summary>
+    <p class="map-note" style="margin:0.6rem 0 0;">
+      % of clients assigned to a different portfolio between the row's
+      regime overlay and the column's, holding each portfolio's
+      dragged/neutral position fixed.
+    </p>
+    <div class="table-scroll"><div id="reassignmentMatrix"></div></div>
+  </details>
+
   <div class="explainer">
     <div>
       <h3>The cell is the client segment</h3>
@@ -326,6 +337,7 @@
       var d = portfolios.map(function (p) { return distSq(c.risk, c.horizon, p.risk, p.horizon); });
       var order = d.map(function (v, idx) { return idx; }).sort(function (a, b) { return d[a] - d[b]; });
       c.cell = order[0];
+      c.secondId = order[1];
       c.nearest = Math.sqrt(d[order[0]]);
       c.second = Math.sqrt(d[order[1]]);
       c.contestable = (c.second - c.nearest) < 0.035;
@@ -361,6 +373,70 @@
   var neutralCellByClientId = {};
   clients.forEach(function (c) { neutralCellByClientId[c.id] = c.cell; });
 
+  // ---------- soft/probabilistic blend for contestable clients ----------
+  // Inverse-distance weighting between nearest and second-nearest only —
+  // exact-on-seed collapses to 100/0, equidistant collapses to 50/50.
+  function blendPct(c) {
+    var total = c.nearest + c.second;
+    var pPrimary = total === 0 ? 100 : Math.round(100 * c.second / total);
+    return { primary: pPrimary, secondary: 100 - pPrimary };
+  }
+  function blendLabel(c) {
+    var pct = blendPct(c);
+    return pct.primary + "% " + portfolios[c.cell].name + " / " +
+      pct.secondary + "% " + portfolios[c.secondId].name;
+  }
+
+  function hexToRgb(hex) {
+    hex = hex.replace('#', '');
+    var n = parseInt(hex, 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+
+  // ---------- cross-regime reassignment matrix + fragility score ----------
+  // For each of the six regime overlays, classify every client using that
+  // overlay's shift applied to each portfolio's *current* (possibly
+  // dragged) baseRisk/horizon -- independent of which overlay is currently
+  // selected/displayed, so this only needs recomputing when a seed moves,
+  // not on every overlay-chip click.
+  var reassignmentMatrix, fragileCount;
+
+  function computeCrossOverlayAssignments() {
+    return REGIME_OVERLAYS.map(function (ov) {
+      var shifted = portfolios.map(function (p) {
+        return { risk: clamp(p.baseRisk + ov.shift, 1, 99), horizon: p.horizon };
+      });
+      var byClientId = {};
+      clients.forEach(function (c) {
+        var d = shifted.map(function (p) { return distSq(c.risk, c.horizon, p.risk, p.horizon); });
+        var order = d.map(function (v, idx) { return idx; }).sort(function (a, b) { return d[a] - d[b]; });
+        byClientId[c.id] = order[0];
+      });
+      return byClientId;
+    });
+  }
+
+  function refreshCrossOverlayStats() {
+    var assignments = computeCrossOverlayAssignments();
+    var n = REGIME_OVERLAYS.length;
+
+    reassignmentMatrix = REGIME_OVERLAYS.map(function () { return new Array(n).fill(0); });
+    clients.forEach(function (c) {
+      for (var i = 0; i < n; i++) {
+        for (var j = 0; j < n; j++) {
+          if (assignments[i][c.id] !== assignments[j][c.id]) reassignmentMatrix[i][j]++;
+        }
+      }
+    });
+
+    fragileCount = clients.filter(function (c) {
+      var seen = {};
+      assignments.forEach(function (a) { seen[a[c.id]] = true; });
+      return Object.keys(seen).length >= 3;
+    }).length;
+  }
+  refreshCrossOverlayStats();
+
   // ---------- canvas setup ----------
   var canvas = document.getElementById("map");
   var ctx = canvas.getContext("2d");
@@ -377,7 +453,7 @@
   function fromPx(px, py) {
     var risk = DOMAIN_X[0] + (px - PAD.l) / plotW * (DOMAIN_X[1] - DOMAIN_X[0]);
     var horizon = DOMAIN_Y[0] + (plotH - (py - PAD.t)) / plotH * (DOMAIN_Y[1] - DOMAIN_Y[0]);
-    return [risk, horizon];
+    return [clamp(risk, DOMAIN_X[0], DOMAIN_X[1]), clamp(horizon, DOMAIN_Y[0], DOMAIN_Y[1])];
   }
 
   function resolveColor(varName) {
@@ -461,18 +537,20 @@
     portfolios.forEach(function (p) {
       var pt = toPx(p.risk, p.horizon);
       var dim = (activeCell !== null && activeCell !== p.id);
+      var isDragging = (dragging === p);
+      var radius = isDragging ? 9.5 : 7;
       ctx.globalAlpha = dim ? 0.3 : 1;
       ctx.beginPath();
-      ctx.arc(pt[0], pt[1], 7, 0, Math.PI * 2);
+      ctx.arc(pt[0], pt[1], radius, 0, Math.PI * 2);
       ctx.fillStyle = resolveColor(p.cssVar);
       ctx.fill();
       ctx.lineWidth = 2;
       ctx.strokeStyle = resolveColor('--paper');
       ctx.stroke();
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = resolveColor('--ink');
+      ctx.lineWidth = isDragging ? 2 : 1;
+      ctx.strokeStyle = resolveColor(isDragging ? '--accent' : '--ink');
       ctx.beginPath();
-      ctx.arc(pt[0], pt[1], 7, 0, Math.PI * 2);
+      ctx.arc(pt[0], pt[1], radius, 0, Math.PI * 2);
       ctx.stroke();
       ctx.globalAlpha = 1;
     });
@@ -500,10 +578,11 @@
   drawVoronoi();
 
   // redraw on theme toggle (data-theme attr changes) and OS scheme change
-  var mo = new MutationObserver(drawVoronoi);
+  function redrawForTheme() { drawVoronoi(); renderReassignmentMatrix(); }
+  var mo = new MutationObserver(redrawForTheme);
   mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   if (window.matchMedia) {
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', drawVoronoi);
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', redrawForTheme);
   }
 
   // ---------- interaction: hover tooltip ----------
@@ -516,9 +595,26 @@
   }
 
   canvas.addEventListener("mousemove", function (e) {
+    if (dragging) return; // the drag handler below owns the tooltip/cursor while active
+
     var s = canvasScale();
     var mx = (e.clientX - s.rect.left) * s.sx;
     var my = (e.clientY - s.rect.top) * s.sy;
+
+    var hoverSeed = seedAt(mx, my);
+    canvas.style.cursor = hoverSeed ? "grab" : "crosshair";
+    if (hoverSeed) {
+      var spt = toPx(hoverSeed.risk, hoverSeed.horizon);
+      tooltip.style.left = (spt[0] / s.sx) + "px";
+      tooltip.style.top = (spt[1] / s.sy) + "px";
+      tooltip.innerHTML =
+        "<span class=\"tt-tag\">" + hoverSeed.name + "</span><br>" +
+        "risk " + hoverSeed.risk.toFixed(0) + " · horizon " + hoverSeed.horizon.toFixed(1) + "y<br>" +
+        "drag to reposition";
+      tooltip.classList.add("visible");
+      return;
+    }
+
     var closest = null, closestD = Infinity;
     clients.forEach(function (c) {
       var pt = toPx(c.risk, c.horizon);
@@ -535,13 +631,15 @@
         "client #" + String(closest.id).padStart(3, "0") + "<br>" +
         "risk " + closest.risk.toFixed(0) + " · horizon " + closest.horizon.toFixed(1) + "y<br>" +
         "<span class=\"tt-tag\">→ " + p.name + "</span>" +
-        (closest.contestable ? "<br><span class=\"tt-tag\">contestable</span>" : "");
+        (closest.contestable ? "<br><span class=\"tt-blend\">" + blendLabel(closest) + "</span>" : "");
       tooltip.classList.add("visible");
     } else {
       tooltip.classList.remove("visible");
     }
   });
-  canvas.addEventListener("mouseleave", function () { tooltip.classList.remove("visible"); });
+  canvas.addEventListener("mouseleave", function () {
+    if (!dragging) tooltip.classList.remove("visible");
+  });
 
   // ---------- sidebar cards ----------
   var cardsEl = document.getElementById("cards");
@@ -606,6 +704,9 @@
       ["regime overlay", ov.name + " (" + (ov.shift > 0 ? "+" : "") + ov.shift + ")", null],
       ["contestable clients", contestableCount + " (" + Math.round(100 * contestableCount / N) + "%)", null],
       ["reassigned vs. neutral", reassigned + " (" + Math.round(100 * reassigned / N) + "%)", null],
+      ["fragile clients", fragileCount + " (" + Math.round(100 * fragileCount / N) + "%)",
+        "assigned to 3+ different portfolios depending which of the six regime overlays is applied -- " +
+          "a sharper measure of overlay exposure than static boundary proximity"],
       ["most contested boundary", mostContested, null]
     ];
     var rb = window.RETURNS_BACKTEST_SUMMARY;
@@ -615,6 +716,15 @@
         (rb.adaptive.total * 100).toFixed(0) + "% adaptive vs " + (rb.static.total * 100).toFixed(0) + "% static",
         "real SPY/AGG/GLD/BIL returns, " + rb.range.years.toFixed(1) + "y, rebalanced to the classified regime's tilt " +
           "each day vs. buy-and-hold at the day-1 tilt (see docs/RETURNS_BACKTEST.md)"
+      ]);
+    }
+    var rrb = window.ROBO_RETURNS_BACKTEST_SUMMARY;
+    if (rrb) {
+      ledgerData.push([
+        "portfolio tilt backtest",
+        (rrb.meanEdgePts >= 0 ? "+" : "") + rrb.meanEdgePts.toFixed(1) + "pt avg edge across 6 portfolios",
+        "real SPY/AGG/VNQ/BIL returns, " + rrb.range.years.toFixed(1) + "y: reassigned daily by the live regime " +
+          "overlay vs. buy-and-hold at each portfolio's own neutral alloc (see docs/ROBO_RETURNS_BACKTEST.md)"
       ]);
     }
     ledgerData.forEach(function (row) {
@@ -662,12 +772,114 @@
     overlayLiveNoteEl.textContent = "no live regime data found -- run the regime map's scripts/fetch-data.js first";
   }
 
+  // ---------- cross-regime reassignment matrix ----------
+  var reassignmentEl = document.getElementById("reassignmentMatrix");
+
+  function renderReassignmentMatrix() {
+    var n = REGIME_OVERLAYS.length;
+    var accentRgb = hexToRgb(resolveColor('--accent'));
+
+    var html = '<table class="matrix-table"><thead><tr><th></th>' +
+      REGIME_OVERLAYS.map(function (ov) {
+        return '<th title="' + ov.name + '">' + ov.name.split(" ")[0] + '</th>';
+      }).join("") +
+      '</tr></thead><tbody>';
+
+    REGIME_OVERLAYS.forEach(function (ov, i) {
+      html += '<tr><th title="' + ov.name + '">' + ov.name.split(" ")[0] + '</th>';
+      REGIME_OVERLAYS.forEach(function (ov2, j) {
+        if (i === j) {
+          html += '<td class="diag">&ndash;</td>';
+          return;
+        }
+        var pct = Math.round(100 * reassignmentMatrix[i][j] / N);
+        var bg = "rgba(" + accentRgb.join(",") + "," + (0.05 + 0.6 * pct / 100).toFixed(2) + ")";
+        html += '<td style="background:' + bg + ';">' + pct + '%</td>';
+      });
+      html += "</tr>";
+    });
+    html += "</tbody></table>";
+    reassignmentEl.innerHTML = html;
+  }
+  renderReassignmentMatrix();
+
+  // ---------- drag-to-reposition portfolio seeds ----------
+  var SEED_HIT_RADIUS = 11; // canvas px
+  var dragging = null;
+
+  function seedAt(mx, my) {
+    var best = null, bestD = Infinity;
+    portfolios.forEach(function (p) {
+      var pt = toPx(p.risk, p.horizon);
+      var d = (pt[0] - mx) * (pt[0] - mx) + (pt[1] - my) * (pt[1] - my);
+      if (d < bestD) { bestD = d; best = p; }
+    });
+    return (best && bestD < SEED_HIT_RADIUS * SEED_HIT_RADIUS) ? best : null;
+  }
+
+  function refreshAfterMove() {
+    rebuildVoronoi();
+    reclassifyClients();
+    refreshCrossOverlayStats();
+    renderCards();
+    renderLedger();
+    renderReassignmentMatrix();
+    drawVoronoi();
+  }
+
+  canvas.addEventListener("mousedown", function (e) {
+    var s = canvasScale();
+    var mx = (e.clientX - s.rect.left) * s.sx;
+    var my = (e.clientY - s.rect.top) * s.sy;
+    var hit = seedAt(mx, my);
+    if (hit) {
+      dragging = hit;
+      canvas.style.cursor = "grabbing";
+      tooltip.classList.remove("visible");
+      e.preventDefault();
+    }
+  });
+
+  window.addEventListener("mousemove", function (e) {
+    if (!dragging) return;
+    var s = canvasScale();
+    var mx = (e.clientX - s.rect.left) * s.sx;
+    var my = (e.clientY - s.rect.top) * s.sy;
+    var v = fromPx(mx, my);
+    // dragging repositions the portfolio's *neutral* location: back out
+    // whatever overlay shift is currently applied so the seed stays put
+    // under the shift you're looking at, and other overlays keep shifting
+    // relative to the new neutral spot -- otherwise the next overlay click
+    // would silently snap the seed back to its pre-drag position.
+    var currentShift = REGIME_OVERLAYS[selectedOverlayIdx].shift;
+    dragging.baseRisk = clamp(v[0] - currentShift, DOMAIN_X[0], DOMAIN_X[1]);
+    dragging.risk = v[0];
+    dragging.horizon = v[1];
+    refreshAfterMove();
+
+    var pt = toPx(dragging.risk, dragging.horizon);
+    tooltip.style.left = (pt[0] / s.sx) + "px";
+    tooltip.style.top = (pt[1] / s.sy) + "px";
+    tooltip.innerHTML =
+      "<span class=\"tt-tag\">" + dragging.name + "</span><br>" +
+      "risk " + dragging.risk.toFixed(0) + " · horizon " + dragging.horizon.toFixed(1) + "y";
+    tooltip.classList.add("visible");
+  });
+
+  window.addEventListener("mouseup", function () {
+    if (!dragging) return;
+    dragging = null;
+    canvas.style.cursor = "crosshair";
+    tooltip.classList.remove("visible");
+  });
+
   // ---------- data provenance ----------
   var footerNoteEl = document.getElementById("footerNote");
   if (liveRegimeName) {
     footerNoteEl.textContent = "Synthetic client data · regime overlay reads real FRED-derived classification " +
       "(as of " + liveRegimeAsOf + ") from data/regime-data.js" +
       (window.RETURNS_BACKTEST_SUMMARY ? " · regime tilt backtest uses real SPY/AGG/GLD/BIL returns (Yahoo Finance), see docs/RETURNS_BACKTEST.md" : "") +
+      (window.ROBO_RETURNS_BACKTEST_SUMMARY ? " · portfolio tilt backtest uses real SPY/AGG/VNQ/BIL returns (Yahoo Finance), see docs/ROBO_RETURNS_BACKTEST.md" : "") +
       " · Voronoi cells computed as true polygons via d3-delaunay";
   }
 

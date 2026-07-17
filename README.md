@@ -17,6 +17,11 @@ or jump straight to either page below.
   overlay" selector shifts every portfolio's risk coordinate at once (based
   on today's real market regime, or a chosen counterfactual) and reports how
   many clients get reassigned without answering a single new question.
+  Seeds are also draggable, live-recomputing cells and reclassification,
+  and a collapsible cross-regime reassignment matrix + "fragile clients"
+  ledger stat show how exposed clients are across all six regime overlays.
+  A second ledger stat backtests the portfolios' own real-return
+  performance, reassigned by the live overlay vs. staying put.
 - **`voronoi-regime.html`** — market regime classification over VIX × 10Y-2Y
   yield curve slope. Six regimes are seeds; each trading day is classified
   to the nearest one. Uses real FRED data when available
@@ -39,15 +44,19 @@ shared.css                CSS common to both pages; each keeps its own
 vendor/d3.min.js          vendored d3-delaunay build
 scripts/fetch-data.js         FRED data puller (writes into data/)
 scripts/backtest.js           classifier backtest, reads data/backtest-data.json
-scripts/fetch-returns-data.js SPY/AGG/GLD/BIL returns puller (Yahoo, writes into data/)
+scripts/fetch-returns-data.js SPY/AGG/GLD/BIL/VNQ returns puller (Yahoo, writes into data/)
 scripts/backtest-returns.js   regime-tilt return backtest, writes returns-backtest-summary.*
+scripts/backtest-robo-returns.js  robo portfolio-alloc return backtest, writes
+                              robo-returns-backtest-summary.*
 data/                         gitignored output of the fetch/backtest scripts, except
-                              regime-data.js and returns-backtest-summary.js (committed
-                              real-data snapshots)
+                              regime-data.js, returns-backtest-summary.js, and
+                              robo-returns-backtest-summary.js (committed real-data
+                              snapshots)
 scripts/check-inline-scripts.js  syntax-checks both HTML files' inline <script> blocks
 assets/                       README images
 docs/BACKTEST.md              classifier backtest findings / known limitations
 docs/RETURNS_BACKTEST.md      regime-tilt return backtest findings / known limitations
+docs/ROBO_RETURNS_BACKTEST.md robo portfolio-alloc return backtest findings / known limitations
 .github/workflows/ci.yml      runs check-inline-scripts.js + node --check on scripts/*.js
 serve.ps1                     gitignored local-only helper, see below
 ```
@@ -67,8 +76,9 @@ To see real market data instead of the synthetic fallback, fetch it first
 node --env-file=.env scripts/fetch-data.js                    # fetch 3yr FRED data -> data/regime-data.{json,js}
 node --env-file=.env scripts/fetch-data.js 8 backtest-data     # fetch 8yr data -> data/backtest-data.{json,js}
 node scripts/backtest.js                                       # run classifier vs. data/backtest-data.json, print findings
-node scripts/fetch-returns-data.js                              # fetch 3yr SPY/AGG/GLD/BIL returns -> data/returns-data.{json,js}
+node scripts/fetch-returns-data.js                              # fetch 3yr SPY/AGG/GLD/BIL/VNQ returns -> data/returns-data.{json,js}
 node scripts/backtest-returns.js                                # regime-tilt vs. static backtest, writes returns-backtest-summary.{json,js}
+node scripts/backtest-robo-returns.js                            # robo portfolio-alloc vs. static backtest, writes robo-returns-backtest-summary.{json,js}
 ```
 
 Requires:
@@ -140,17 +150,28 @@ server window to stop it.
   yield-curve inversion, and collapses very different volatility spikes
   (VIX 35 vs. 82) into the same "Shock Selloff" label.
 - `scripts/fetch-returns-data.js` pulls daily dividend/split-adjusted prices
-  for SPY/AGG/GLD/BIL (the equity/bond/gold/cash tilt legs) from Yahoo
-  Finance's unofficial chart endpoint — the one deliberate exception to the
-  FRED-only pipeline above, since FRED no longer carries a spot gold price
-  series. `scripts/backtest-returns.js` then simulates a static buy-and-hold
+  for SPY/AGG/GLD/BIL/VNQ (the regime page's `equity/bond/gold/cash` tilt
+  legs, plus VNQ for the robo page's `alt` alloc leg) from Yahoo Finance's
+  unofficial chart endpoint — the one deliberate exception to the FRED-only
+  pipeline above, since FRED no longer carries a spot gold price series.
+  `scripts/backtest-returns.js` then simulates a static buy-and-hold
   portfolio against one rebalanced daily to the classified regime's tilt,
   and writes a small precomputed headline
   (`data/returns-backtest-summary.js`) that `voronoi-robo.html` shows as a
-  ledger stat. `refresh-data.yml` reruns both daily alongside the regime
-  data. **Read `docs/RETURNS_BACKTEST.md` before trusting that number** —
-  it's one 3-year window, one starting regime, and ignores transaction
-  costs entirely.
+  ledger stat. **Read `docs/RETURNS_BACKTEST.md` before trusting that
+  number** — it's one 3-year window, one starting regime, and ignores
+  transaction costs entirely.
+- `scripts/backtest-robo-returns.js` asks a related but different question
+  for the robo page's own six portfolios and their `equity/bond/cash/alt`
+  alloc: would a client have done better reassigned daily to whichever
+  portfolio the live regime overlay puts them nearest to, vs. staying put
+  in their neutral portfolio? Writes
+  `data/robo-returns-backtest-summary.js`, also shown as a
+  `voronoi-robo.html` ledger stat. `refresh-data.yml` reruns all three
+  scripts daily alongside the regime data. **Read
+  `docs/ROBO_RETURNS_BACKTEST.md` before trusting that number** —
+  reassignment turns out to be rare for this particular seed layout, a
+  more skeptical finding than the regime-tilt backtest's.
 
 ## Cross-file coupling
 
@@ -161,6 +182,10 @@ selection) from the same `data/regime-data.js` file. There is no shared
 module — if the regime seeds/domain in `voronoi-regime.html` are changed,
 the duplicated copy inside `voronoi-robo.html`'s `<script>` must be updated
 to match, or the two pages' idea of "today's regime" will diverge silently.
+`scripts/backtest-robo-returns.js` duplicates `voronoi-robo.html`'s
+`REGIME_SEEDS`, `REGIME_OVERLAYS`, and `portfolios`/alloc a further time —
+a fifth duplicated copy overall, and the first one of the robo page's own
+portfolio/overlay data specifically.
 
 ## Shared stylesheet
 
@@ -170,7 +195,11 @@ lives in `shared.css`, loaded via `<link rel="stylesheet" href="./shared.css">`
 in both files — `<link>` isn't subject to the `file://` CORS restriction
 that rules out `fetch()` above, so this still needs no server. Each page's
 own `<style>` block keeps only what genuinely differs (layout, and
-components only one page has).
+components only one page has). `.collapsible` (the `<details>` disclosure
+widget) and `.matrix-table` (heatmap-style data tables) were added to
+`shared.css` once both pages needed them, renamed from `voronoi-regime.html`'s
+original `.sidebar`/`.transition-table` names to avoid colliding with
+`voronoi-robo.html`'s own, differently-meaning `.sidebar` class.
 
 See `CLAUDE.md` for more implementation details (theming system, sanity
 checks, etc.) intended for whoever (human or AI) is editing this code.
