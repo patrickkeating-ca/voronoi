@@ -22,26 +22,6 @@
   .sidebar {
     margin-top: 1.5rem;
   }
-  .sidebar summary {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    cursor: pointer;
-    font-weight: 600;
-    font-size: 0.85rem;
-    letter-spacing: 0.02em;
-    list-style: none;
-  }
-  .sidebar summary::-webkit-details-marker { display: none; }
-  .sidebar summary::before {
-    content: "▸";
-    display: inline-block;
-    margin-right: 0.4rem;
-    color: var(--ink-soft);
-    transition: transform 0.12s ease;
-  }
-  .sidebar[open] summary::before { transform: rotate(90deg); }
-  .sidebar summary .reset-btn { font-weight: 400; }
   #cards {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
@@ -123,23 +103,6 @@
     border-color: var(--accent);
   }
   button.range-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-
-  .table-scroll { overflow-x: auto; margin-top: 0.6rem; }
-  table.transition-table {
-    border-collapse: collapse;
-    font-family: var(--font-mono);
-    font-size: 0.68rem;
-    width: 100%;
-  }
-  .transition-table th, .transition-table td {
-    padding: 0.3rem 0.45rem;
-    text-align: center;
-    border: 1px solid var(--line);
-    white-space: nowrap;
-  }
-  .transition-table thead th { font-weight: 600; color: var(--ink-soft); }
-  .transition-table tbody th { text-align: left; font-weight: 600; color: var(--ink-soft); }
-  .transition-table td.diag { font-weight: 700; color: var(--ink); }
 </style>
 
 <div class="wrap">
@@ -169,13 +132,13 @@
     </div>
   </div>
 
-  <details class="sidebar">
+  <details class="sidebar collapsible">
     <summary>Regimes &amp; tilts</summary>
     <button class="reset-btn" id="resetBtn" style="margin-top:0.6rem;">show all</button>
     <div id="cards"></div>
   </details>
 
-  <details class="sidebar">
+  <details class="sidebar collapsible">
     <summary>Regime transition matrix</summary>
     <p class="map-note" style="margin:0.6rem 0 0;">
       P(next trading day's regime = column | today's regime = row), tallied
@@ -887,7 +850,7 @@
     var counts = computeTransitionCounts();
     var rowTotals = counts.map(function (row) { return row.reduce(function (a, b) { return a + b; }, 0); });
 
-    var html = '<table class="transition-table"><thead><tr><th></th>' +
+    var html = '<table class="matrix-table"><thead><tr><th></th>' +
       regimes.map(function (r) {
         return '<th title="' + r.name + '">' + r.name.split(" ")[0] + '</th>';
       }).join("") +

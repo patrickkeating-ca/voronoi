@@ -1,6 +1,7 @@
 /* Shared styles for voronoi-robo.html and voronoi-regime.html: color tokens,
-   base resets, and the components (map panel, tooltip, sidebar cards,
-   ledger, explainer, buttons) that are identical between the two pages.
+   base resets, and the components (map panel, tooltip, portfolio cards,
+   ledger, explainer, buttons, collapsible <details> sections, matrix
+   tables) that are identical between the two pages.
    Layout-specific rules (e.g. .floor, .explainer's grid-template-columns,
    .sidebar's meaning, page-only components like the regime page's
    trail/range controls or the robo page's overlay chips) stay in each
@@ -211,6 +212,44 @@ canvas#map {
   margin-top: 0.3rem;
   line-height: 1.35;
 }
+
+.collapsible summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+  list-style: none;
+}
+.collapsible summary::-webkit-details-marker { display: none; }
+.collapsible summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 0.4rem;
+  color: var(--ink-soft);
+  transition: transform 0.12s ease;
+}
+.collapsible[open] summary::before { transform: rotate(90deg); }
+.collapsible summary .reset-btn { font-weight: 400; }
+
+.table-scroll { overflow-x: auto; margin-top: 0.6rem; }
+table.matrix-table {
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  width: 100%;
+}
+.matrix-table th, .matrix-table td {
+  padding: 0.3rem 0.45rem;
+  text-align: center;
+  border: 1px solid var(--line);
+  white-space: nowrap;
+}
+.matrix-table thead th { font-weight: 600; color: var(--ink-soft); }
+.matrix-table tbody th { text-align: left; font-weight: 600; color: var(--ink-soft); }
+.matrix-table td.diag { font-weight: 700; color: var(--ink); }
 
 .explainer h3 {
   font-family: var(--font-display);

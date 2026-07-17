@@ -16,7 +16,11 @@ ideas. `index.html` is a landing page linking both:
   many clients get reassigned without answering a single new question.
   Seeds are also draggable, live-recomputing cells and reclassification —
   dragging repositions a portfolio's neutral location, so subsequent
-  overlay clicks keep shifting relative to the new spot.
+  overlay clicks keep shifting relative to the new spot. A collapsible
+  cross-regime reassignment matrix shows, for every pair of the six
+  overlays, what percentage of clients would land in a different
+  portfolio; a ledger stat surfaces "fragile" clients (3+ distinct
+  portfolios across the six overlays).
 - **`voronoi-regime.html`** — market regime classification over VIX × 10Y-2Y
   yield curve slope. Six regimes are seeds; each trading day is classified
   to the nearest one. Uses real FRED data when available (`data/regime-data.js`),
@@ -164,12 +168,18 @@ portfolios vs. regimes) despite sharing variable names.
 
 The tokens above, plus every component style that's identical between the
 two pages (base resets, `.map-panel`, `.tooltip`, `.portfolio-card`,
-`.ledger-*`, `.explainer h3`/`p`, `footer`, buttons), live in `shared.css`,
-loaded via `<link rel="stylesheet" href="./shared.css">` in both files —
-`<link>` isn't subject to the `file://` CORS restriction that rules out
-`fetch()` (see "Running the pages" above), so this doesn't require a
-server. Each page's own `<style>` block keeps only what genuinely differs:
-layout (`.floor`, `.explainer`'s grid-template-columns), and components
-only one page has (the regime page's `.sidebar`/`.trail-controls`/
-`.transition-table`, the robo page's `.overlay-panel`). If a rule looks
-identical in both files, it belongs in `shared.css`, not duplicated.
+`.ledger-*`, `.explainer h3`/`p`, `footer`, buttons, the `.collapsible`
+`<details>` disclosure widget, `.matrix-table` for both pages' data-table
+heatmaps), live in `shared.css`, loaded via `<link rel="stylesheet"
+href="./shared.css">` in both files — `<link>` isn't subject to the
+`file://` CORS restriction that rules out `fetch()` (see "Running the
+pages" above), so this doesn't require a server. Each page's own `<style>`
+block keeps only what genuinely differs: layout (`.floor`, `.explainer`'s
+grid-template-columns), and components only one page has (the regime
+page's `.sidebar` — note this means something different from the robo
+page's `.sidebar`, which is the flex-column card rail, not a collapsible —
+plus its `.trail-controls`, the robo page's `.overlay-panel`). If a rule
+looks identical in both files, it belongs in `shared.css`, not duplicated;
+`.collapsible`/`.matrix-table` were both migrated there when the robo
+page grew a second `<details>`-based feature and needed the exact same
+table look the regime page already had.

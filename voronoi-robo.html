@@ -175,6 +175,16 @@
 
   <div class="ledger" id="ledger"></div>
 
+  <details class="collapsible" style="margin-top:1.5rem;">
+    <summary>Cross-regime reassignment matrix</summary>
+    <p class="map-note" style="margin:0.6rem 0 0;">
+      % of clients assigned to a different portfolio between the row's
+      regime overlay and the column's, holding each portfolio's
+      dragged/neutral position fixed.
+    </p>
+    <div class="table-scroll"><div id="reassignmentMatrix"></div></div>
+  </details>
+
   <div class="explainer">
     <div>
       <h3>The cell is the client segment</h3>
@@ -376,6 +386,56 @@
       pct.secondary + "% " + portfolios[c.secondId].name;
   }
 
+  function hexToRgb(hex) {
+    hex = hex.replace('#', '');
+    var n = parseInt(hex, 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+
+  // ---------- cross-regime reassignment matrix + fragility score ----------
+  // For each of the six regime overlays, classify every client using that
+  // overlay's shift applied to each portfolio's *current* (possibly
+  // dragged) baseRisk/horizon -- independent of which overlay is currently
+  // selected/displayed, so this only needs recomputing when a seed moves,
+  // not on every overlay-chip click.
+  var reassignmentMatrix, fragileCount;
+
+  function computeCrossOverlayAssignments() {
+    return REGIME_OVERLAYS.map(function (ov) {
+      var shifted = portfolios.map(function (p) {
+        return { risk: clamp(p.baseRisk + ov.shift, 1, 99), horizon: p.horizon };
+      });
+      var byClientId = {};
+      clients.forEach(function (c) {
+        var d = shifted.map(function (p) { return distSq(c.risk, c.horizon, p.risk, p.horizon); });
+        var order = d.map(function (v, idx) { return idx; }).sort(function (a, b) { return d[a] - d[b]; });
+        byClientId[c.id] = order[0];
+      });
+      return byClientId;
+    });
+  }
+
+  function refreshCrossOverlayStats() {
+    var assignments = computeCrossOverlayAssignments();
+    var n = REGIME_OVERLAYS.length;
+
+    reassignmentMatrix = REGIME_OVERLAYS.map(function () { return new Array(n).fill(0); });
+    clients.forEach(function (c) {
+      for (var i = 0; i < n; i++) {
+        for (var j = 0; j < n; j++) {
+          if (assignments[i][c.id] !== assignments[j][c.id]) reassignmentMatrix[i][j]++;
+        }
+      }
+    });
+
+    fragileCount = clients.filter(function (c) {
+      var seen = {};
+      assignments.forEach(function (a) { seen[a[c.id]] = true; });
+      return Object.keys(seen).length >= 3;
+    }).length;
+  }
+  refreshCrossOverlayStats();
+
   // ---------- canvas setup ----------
   var canvas = document.getElementById("map");
   var ctx = canvas.getContext("2d");
@@ -517,10 +577,11 @@
   drawVoronoi();
 
   // redraw on theme toggle (data-theme attr changes) and OS scheme change
-  var mo = new MutationObserver(drawVoronoi);
+  function redrawForTheme() { drawVoronoi(); renderReassignmentMatrix(); }
+  var mo = new MutationObserver(redrawForTheme);
   mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   if (window.matchMedia) {
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', drawVoronoi);
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', redrawForTheme);
   }
 
   // ---------- interaction: hover tooltip ----------
@@ -642,6 +703,9 @@
       ["regime overlay", ov.name + " (" + (ov.shift > 0 ? "+" : "") + ov.shift + ")", null],
       ["contestable clients", contestableCount + " (" + Math.round(100 * contestableCount / N) + "%)", null],
       ["reassigned vs. neutral", reassigned + " (" + Math.round(100 * reassigned / N) + "%)", null],
+      ["fragile clients", fragileCount + " (" + Math.round(100 * fragileCount / N) + "%)",
+        "assigned to 3+ different portfolios depending which of the six regime overlays is applied -- " +
+          "a sharper measure of overlay exposure than static boundary proximity"],
       ["most contested boundary", mostContested, null]
     ];
     var rb = window.RETURNS_BACKTEST_SUMMARY;
@@ -698,6 +762,37 @@
     overlayLiveNoteEl.textContent = "no live regime data found -- run the regime map's scripts/fetch-data.js first";
   }
 
+  // ---------- cross-regime reassignment matrix ----------
+  var reassignmentEl = document.getElementById("reassignmentMatrix");
+
+  function renderReassignmentMatrix() {
+    var n = REGIME_OVERLAYS.length;
+    var accentRgb = hexToRgb(resolveColor('--accent'));
+
+    var html = '<table class="matrix-table"><thead><tr><th></th>' +
+      REGIME_OVERLAYS.map(function (ov) {
+        return '<th title="' + ov.name + '">' + ov.name.split(" ")[0] + '</th>';
+      }).join("") +
+      '</tr></thead><tbody>';
+
+    REGIME_OVERLAYS.forEach(function (ov, i) {
+      html += '<tr><th title="' + ov.name + '">' + ov.name.split(" ")[0] + '</th>';
+      REGIME_OVERLAYS.forEach(function (ov2, j) {
+        if (i === j) {
+          html += '<td class="diag">&ndash;</td>';
+          return;
+        }
+        var pct = Math.round(100 * reassignmentMatrix[i][j] / N);
+        var bg = "rgba(" + accentRgb.join(",") + "," + (0.05 + 0.6 * pct / 100).toFixed(2) + ")";
+        html += '<td style="background:' + bg + ';">' + pct + '%</td>';
+      });
+      html += "</tr>";
+    });
+    html += "</tbody></table>";
+    reassignmentEl.innerHTML = html;
+  }
+  renderReassignmentMatrix();
+
   // ---------- drag-to-reposition portfolio seeds ----------
   var SEED_HIT_RADIUS = 11; // canvas px
   var dragging = null;
@@ -715,8 +810,10 @@
   function refreshAfterMove() {
     rebuildVoronoi();
     reclassifyClients();
+    refreshCrossOverlayStats();
     renderCards();
     renderLedger();
+    renderReassignmentMatrix();
     drawVoronoi();
   }
 

@@ -17,7 +17,9 @@ or jump straight to either page below.
   overlay" selector shifts every portfolio's risk coordinate at once (based
   on today's real market regime, or a chosen counterfactual) and reports how
   many clients get reassigned without answering a single new question.
-  Seeds are also draggable, live-recomputing cells and reclassification.
+  Seeds are also draggable, live-recomputing cells and reclassification,
+  and a collapsible cross-regime reassignment matrix + "fragile clients"
+  ledger stat show how exposed clients are across all six regime overlays.
 - **`voronoi-regime.html`** — market regime classification over VIX × 10Y-2Y
   yield curve slope. Six regimes are seeds; each trading day is classified
   to the nearest one. Uses real FRED data when available
@@ -171,7 +173,11 @@ lives in `shared.css`, loaded via `<link rel="stylesheet" href="./shared.css">`
 in both files — `<link>` isn't subject to the `file://` CORS restriction
 that rules out `fetch()` above, so this still needs no server. Each page's
 own `<style>` block keeps only what genuinely differs (layout, and
-components only one page has).
+components only one page has). `.collapsible` (the `<details>` disclosure
+widget) and `.matrix-table` (heatmap-style data tables) were added to
+`shared.css` once both pages needed them, renamed from `voronoi-regime.html`'s
+original `.sidebar`/`.transition-table` names to avoid colliding with
+`voronoi-robo.html`'s own, differently-meaning `.sidebar` class.
 
 See `CLAUDE.md` for more implementation details (theming system, sanity
 checks, etc.) intended for whoever (human or AI) is editing this code.
