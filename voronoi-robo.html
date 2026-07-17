@@ -326,6 +326,7 @@
       var d = portfolios.map(function (p) { return distSq(c.risk, c.horizon, p.risk, p.horizon); });
       var order = d.map(function (v, idx) { return idx; }).sort(function (a, b) { return d[a] - d[b]; });
       c.cell = order[0];
+      c.secondId = order[1];
       c.nearest = Math.sqrt(d[order[0]]);
       c.second = Math.sqrt(d[order[1]]);
       c.contestable = (c.second - c.nearest) < 0.035;
@@ -360,6 +361,20 @@
   reclassifyClients();
   var neutralCellByClientId = {};
   clients.forEach(function (c) { neutralCellByClientId[c.id] = c.cell; });
+
+  // ---------- soft/probabilistic blend for contestable clients ----------
+  // Inverse-distance weighting between nearest and second-nearest only —
+  // exact-on-seed collapses to 100/0, equidistant collapses to 50/50.
+  function blendPct(c) {
+    var total = c.nearest + c.second;
+    var pPrimary = total === 0 ? 100 : Math.round(100 * c.second / total);
+    return { primary: pPrimary, secondary: 100 - pPrimary };
+  }
+  function blendLabel(c) {
+    var pct = blendPct(c);
+    return pct.primary + "% " + portfolios[c.cell].name + " / " +
+      pct.secondary + "% " + portfolios[c.secondId].name;
+  }
 
   // ---------- canvas setup ----------
   var canvas = document.getElementById("map");
@@ -535,7 +550,7 @@
         "client #" + String(closest.id).padStart(3, "0") + "<br>" +
         "risk " + closest.risk.toFixed(0) + " · horizon " + closest.horizon.toFixed(1) + "y<br>" +
         "<span class=\"tt-tag\">→ " + p.name + "</span>" +
-        (closest.contestable ? "<br><span class=\"tt-tag\">contestable</span>" : "");
+        (closest.contestable ? "<br><span class=\"tt-blend\">" + blendLabel(closest) + "</span>" : "");
       tooltip.classList.add("visible");
     } else {
       tooltip.classList.remove("visible");
