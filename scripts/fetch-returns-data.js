@@ -1,7 +1,7 @@
-// Pulls daily dividend/split-adjusted prices for the 4 asset-class proxies
-// used by the regime-tilt return backtest (SPY/AGG/GLD/BIL, standing in for
-// equity/bond/gold/cash) from Yahoo Finance's unofficial chart endpoint, and
-// writes a static JSON + <script>-includable JS file of daily returns. Run:
+// Pulls daily dividend/split-adjusted prices for the 5 asset-class proxies
+// used by the two return backtests (SPY/AGG/GLD/BIL/VNQ, standing in for
+// equity/bond/gold/cash/alt) from Yahoo Finance's unofficial chart endpoint,
+// and writes a static JSON + <script>-includable JS file of daily returns. Run:
 //   node scripts/fetch-returns-data.js [yearsBack] [outBasename]
 // e.g. node scripts/fetch-returns-data.js 8 backtest-returns-data
 //
@@ -21,9 +21,10 @@ start.setFullYear(start.getFullYear() - YEARS_BACK);
 const period1 = Math.floor(start.getTime() / 1000);
 const period2 = Math.floor(Date.now() / 1000);
 
-// equity, bond, gold, cash proxies -- matches the tilt keys in
-// voronoi-regime.html's REGIME_SEEDS / voronoi-robo.html's overlay
-const TICKERS = { equity: "SPY", bond: "AGG", gold: "GLD", cash: "BIL" };
+// equity/bond/gold/cash matches voronoi-regime.html's REGIME_SEEDS tilt
+// keys; alt (VNQ, a REIT proxy) matches voronoi-robo.html's portfolio
+// alloc keys (equity/bond/cash/alt -- no gold) instead
+const TICKERS = { equity: "SPY", bond: "AGG", gold: "GLD", cash: "BIL", alt: "VNQ" };
 
 async function fetchAdjClose(symbol) {
   const url =

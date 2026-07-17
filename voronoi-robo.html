@@ -3,6 +3,7 @@
 <link rel="stylesheet" href="./shared.css">
 <script src="./data/regime-data.js"></script>
 <script src="./data/returns-backtest-summary.js"></script>
+<script src="./data/robo-returns-backtest-summary.js"></script>
 <script src="./vendor/d3.min.js"></script>
 <style>
   /* Masthead */
@@ -717,6 +718,15 @@
           "each day vs. buy-and-hold at the day-1 tilt (see docs/RETURNS_BACKTEST.md)"
       ]);
     }
+    var rrb = window.ROBO_RETURNS_BACKTEST_SUMMARY;
+    if (rrb) {
+      ledgerData.push([
+        "portfolio tilt backtest",
+        (rrb.meanEdgePts >= 0 ? "+" : "") + rrb.meanEdgePts.toFixed(1) + "pt avg edge across 6 portfolios",
+        "real SPY/AGG/VNQ/BIL returns, " + rrb.range.years.toFixed(1) + "y: reassigned daily by the live regime " +
+          "overlay vs. buy-and-hold at each portfolio's own neutral alloc (see docs/ROBO_RETURNS_BACKTEST.md)"
+      ]);
+    }
     ledgerData.forEach(function (row) {
       var cell = document.createElement("div");
       cell.className = "ledger-cell";
@@ -869,6 +879,7 @@
     footerNoteEl.textContent = "Synthetic client data · regime overlay reads real FRED-derived classification " +
       "(as of " + liveRegimeAsOf + ") from data/regime-data.js" +
       (window.RETURNS_BACKTEST_SUMMARY ? " · regime tilt backtest uses real SPY/AGG/GLD/BIL returns (Yahoo Finance), see docs/RETURNS_BACKTEST.md" : "") +
+      (window.ROBO_RETURNS_BACKTEST_SUMMARY ? " · portfolio tilt backtest uses real SPY/AGG/VNQ/BIL returns (Yahoo Finance), see docs/ROBO_RETURNS_BACKTEST.md" : "") +
       " · Voronoi cells computed as true polygons via d3-delaunay";
   }
 
