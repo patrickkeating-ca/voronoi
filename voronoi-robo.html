@@ -2,6 +2,7 @@
 <link rel="icon" type="image/x-icon" href="./favicon.ico">
 <link rel="stylesheet" href="./shared.css">
 <script src="./data/regime-data.js"></script>
+<script src="./data/returns-data.js"></script>
 <script src="./data/returns-backtest-summary.js"></script>
 <script src="./data/robo-returns-backtest-summary.js"></script>
 <script src="./vendor/d3.min.js"></script>
@@ -85,6 +86,90 @@
     outline-offset: 2px;
   }
 
+  /* Client journey panel */
+  .journey-panel {
+    background: var(--card-bg);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    box-shadow: var(--shadow);
+    padding: 0.75rem 0.85rem;
+    margin-top: 0.9rem;
+  }
+  .journey-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 0.6rem;
+    gap: 1rem;
+  }
+  .journey-head h2 {
+    font-weight: 600;
+    font-size: 0.85rem;
+    letter-spacing: 0.02em;
+    margin: 0;
+  }
+  .journey-strip-wrap { position: relative; }
+  .journey-strip {
+    display: block;
+    width: 100%;
+    height: 28px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .journey-scrubber {
+    display: block;
+    width: 100%;
+    margin-top: 0.35rem;
+    accent-color: var(--accent);
+  }
+  .journey-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.55rem;
+    flex-wrap: wrap;
+  }
+  .journey-date {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--ink-soft);
+  }
+  .journey-current {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 600;
+  }
+  .journey-stats {
+    margin-top: 0.9rem;
+  }
+  .journey-chart-wrap {
+    margin-top: 0.9rem;
+  }
+  .journey-chart {
+    display: block;
+    width: 100%;
+    height: 120px;
+  }
+  .journey-chart-legend {
+    display: flex;
+    gap: 1rem;
+    margin-top: 0.35rem;
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    color: var(--ink-soft);
+  }
+  .journey-chart-legend span::before {
+    content: "";
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 0.35rem;
+    vertical-align: middle;
+  }
+  .journey-chart-legend .lg-static::before { background: var(--ink-soft); }
+  .journey-chart-legend .lg-adaptive::before { background: var(--accent); }
+
   /* Sidebar: portfolio ledger */
   .sidebar {
     display: flex;
@@ -157,11 +242,35 @@
       </div>
       <div class="map-panel-head">
         <h2>Risk tolerance × time horizon</h2>
-        <span class="map-note" id="hoverHint">hover a dot · click a portfolio to isolate</span>
+        <span class="map-note" id="hoverHint">hover a dot · click a portfolio to isolate · click a client to follow their journey</span>
       </div>
       <div class="canvas-shell">
         <canvas id="map" width="900" height="620"></canvas>
         <div class="tooltip" id="tooltip"></div>
+      </div>
+
+      <div class="journey-panel" id="journeyPanel" hidden>
+        <div class="journey-head">
+          <h2>Client #<span id="journeyClientId"></span> journey</h2>
+          <button class="reset-btn" id="journeyCloseBtn">close</button>
+        </div>
+        <div class="journey-strip-wrap">
+          <canvas id="journeyStrip" class="journey-strip" height="28"></canvas>
+          <input type="range" id="journeyScrubber" class="journey-scrubber" min="0" max="0" value="0" step="1">
+        </div>
+        <div class="journey-controls">
+          <button class="reset-btn" id="journeyPlayBtn">play</button>
+          <span class="journey-date" id="journeyDate"></span>
+          <span class="journey-current" id="journeyCurrent"></span>
+        </div>
+        <div class="ledger journey-stats" id="journeyStats"></div>
+        <div class="journey-chart-wrap" id="journeyChartWrap">
+          <canvas id="journeyChart" class="journey-chart" height="120"></canvas>
+          <div class="journey-chart-legend" id="journeyChartLegend">
+            <span class="lg-static">static (home alloc, buy &amp; hold)</span>
+            <span class="lg-adaptive">adaptive (reassigned by real regime)</span>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -244,6 +353,8 @@
       alloc: { equity: 90, bond: 0,  cash: 0,  alt: 10 } }
   ];
   portfolios.forEach(function (p) { p.baseRisk = p.risk; });
+  var allocKeys = [["equity", "eq"], ["bond", "bd"], ["cash", "ca"], ["alt", "alt"]];
+  var ASSET_KEYS = allocKeys.map(function (k) { return k[0]; });
 
   var DOMAIN_X = [0, 100];
   var DOMAIN_Y = [0, 36];
@@ -291,6 +402,33 @@
     var found = REGIME_OVERLAYS.findIndex(function (o) { return o.name === liveRegimeName; });
     if (found !== -1) defaultOverlayIdx = found;
   }
+
+  // ---------- client journey mode: real regime history + real returns ----------
+  // buildRegimeTimeline() classifies *every* historical day (not just the
+  // latest, like liveRegimeName above) using the same REGIME_SEEDS/
+  // REGIME_OVERLAYS classifier. It's independent of portfolio positions, so
+  // it's computed once and reused for every client's journey.
+  function buildRegimeTimeline() {
+    if (!window.REGIME_DATA || !window.REGIME_DATA.days) return [];
+    return window.REGIME_DATA.days.map(function (d) {
+      var rd = REGIME_SEEDS.map(function (r) { return regimeDistSq(d.vix, d.slope, r.vix, r.slope); });
+      var order = rd.map(function (v, i) { return i; }).sort(function (a, b) { return rd[a] - rd[b]; });
+      var regime = REGIME_SEEDS[order[0]];
+      var overlay = REGIME_OVERLAYS.filter(function (o) { return o.name === regime.name; })[0];
+      return { date: d.date, regimeName: regime.name, shift: overlay ? overlay.shift : 0 };
+    });
+  }
+  var regimeTimeline = buildRegimeTimeline();
+
+  // real SPY/AGG/GLD/BIL/VNQ daily returns (data/returns-data.js) -- null if
+  // that script didn't load, same optional-data pattern as RETURNS_BACKTEST_SUMMARY
+  var returnsByDate = (window.RETURNS_DATA && window.RETURNS_DATA.days)
+    ? (function () {
+        var m = {};
+        window.RETURNS_DATA.days.forEach(function (d) { m[d.date] = d.ret; });
+        return m;
+      })()
+    : null;
 
   // ---------- seeded RNG so the mock data is stable across renders ----------
   function mulberry32(a) {
@@ -372,6 +510,68 @@
   reclassifyClients();
   var neutralCellByClientId = {};
   clients.forEach(function (c) { neutralCellByClientId[c.id] = c.cell; });
+
+  // ---------- client journey: walk one client through real trading history ----------
+  // For each historical day, shifts the portfolios' *current* baseRisk (so a
+  // dragged seed is respected) by that day's real classified-regime shift,
+  // finds which portfolio the client is nearest to, and -- if real returns
+  // are loaded -- accumulates static (home alloc, buy & hold) vs. adaptive
+  // (reassigned daily) cumulative return, mirroring the per-day loop in
+  // scripts/backtest-robo-returns.js but for an arbitrary client instead of
+  // just the 6 seed-representative ones.
+  function buildJourney(client) {
+    var homeIdx = neutralCellByClientId[client.id];
+    var homeAlloc = portfolios[homeIdx].alloc;
+    var staticValue = 1, adaptiveValue = 1;
+    var hasReturns = !!returnsByDate;
+
+    var days = [];
+    regimeTimeline.forEach(function (d) {
+      var ret = hasReturns ? returnsByDate[d.date] : null;
+      if (hasReturns && !ret) return; // only walk days with real returns joined in
+
+      var shifted = portfolios.map(function (p) {
+        return { risk: clamp(p.baseRisk + d.shift, DOMAIN_X[0], DOMAIN_X[1]), horizon: p.horizon };
+      });
+      var dd = shifted.map(function (p) { return distSq(client.risk, client.horizon, p.risk, p.horizon); });
+      var order = dd.map(function (v, i) { return i; }).sort(function (a, b) { return dd[a] - dd[b]; });
+      var assignedIdx = order[0];
+
+      var entry = { date: d.date, regimeName: d.regimeName, shift: d.shift, assignedIdx: assignedIdx };
+      if (hasReturns) {
+        var staticRet = ASSET_KEYS.reduce(function (sum, k) { return sum + (homeAlloc[k] / 100) * ret[k]; }, 0);
+        var adaptiveRet = ASSET_KEYS.reduce(function (sum, k) { return sum + (portfolios[assignedIdx].alloc[k] / 100) * ret[k]; }, 0);
+        staticValue *= 1 + staticRet;
+        adaptiveValue *= 1 + adaptiveRet;
+        entry.staticValue = staticValue;
+        entry.adaptiveValue = adaptiveValue;
+      }
+      days.push(entry);
+    });
+
+    var reassignedDays = days.filter(function (d) { return d.assignedIdx !== homeIdx; }).length;
+    var visited = {};
+    days.forEach(function (d) { visited[d.assignedIdx] = (visited[d.assignedIdx] || 0) + 1; });
+    var longestStint = 0, curStint = 0, curIdx = null;
+    days.forEach(function (d) {
+      if (d.assignedIdx === curIdx) { curStint++; } else { curIdx = d.assignedIdx; curStint = 1; }
+      if (curStint > longestStint) longestStint = curStint;
+    });
+
+    var last = days.length ? days[days.length - 1] : null;
+
+    return {
+      client: client,
+      homeIdx: homeIdx,
+      days: days,
+      hasReturns: hasReturns && days.length > 0,
+      reassignedDays: reassignedDays,
+      reassignedPct: days.length ? Math.round(100 * reassignedDays / days.length) : 0,
+      distinctVisited: Object.keys(visited).length,
+      longestStint: longestStint,
+      edgePts: (hasReturns && last) ? 100 * (last.adaptiveValue - last.staticValue) : null
+    };
+  }
 
   // ---------- soft/probabilistic blend for contestable clients ----------
   // Inverse-distance weighting between nearest and second-nearest only —
@@ -462,27 +662,61 @@
 
   var activeCell = null; // null = show all
 
+  // client journey selection state (declared here so drawVoronoi/drawSeeds/
+  // drawClients below can reference it via closure)
+  var journey = null;       // null, or the object returned by buildJourney()
+  var journeyIdx = 0;       // index into journey.days -- which historical day is "current"
+  var journeyPlaying = false;
+  var journeyTimer = null;
+
   // ---------- real Voronoi geometry via d3-delaunay ----------
   // rebuilt whenever the regime overlay moves the portfolio seeds
   var delaunay, voronoi;
-  function rebuildVoronoi() {
-    delaunay = d3.Delaunay.from(
-      portfolios,
+  function rebuildVoronoiFor(portfolioSet) {
+    var dl = d3.Delaunay.from(
+      portfolioSet,
       function (p) { return toPx(p.risk, p.horizon)[0]; },
       function (p) { return toPx(p.risk, p.horizon)[1]; }
     );
-    voronoi = delaunay.voronoi([PAD.l, PAD.t, PAD.l + plotW, PAD.t + plotH]);
+    return { delaunay: dl, voronoi: dl.voronoi([PAD.l, PAD.t, PAD.l + plotW, PAD.t + plotH]) };
+  }
+  // the shift currently *drawn* on screen -- the journey day's shift while
+  // scrubbing, otherwise the selected overlay chip's shift. Hit-testing and
+  // dragging must use this too, or a click during journey preview would
+  // target the invisible overlay-chip position instead of what's on screen.
+  function currentDisplayShift() {
+    return (journey && journey.days.length) ? journey.days[journeyIdx].shift : REGIME_OVERLAYS[selectedOverlayIdx].shift;
+  }
+  function computeShiftedPortfolios(shift) {
+    return portfolios.map(function (p) {
+      return { id: p.id, cssVar: p.cssVar, risk: clamp(p.baseRisk + shift, DOMAIN_X[0], DOMAIN_X[1]), horizon: p.horizon };
+    });
+  }
+  function rebuildVoronoi() {
+    var built = rebuildVoronoiFor(portfolios);
+    delaunay = built.delaunay;
+    voronoi = built.voronoi;
   }
   rebuildVoronoi();
 
   function drawVoronoi() {
+    var inJourney = journey && journey.days.length > 0;
+    var displayPortfolios = portfolios;
+    var displayVoronoi = voronoi;
+    var journeyAssignedIdx = null;
+    if (inJourney) {
+      journeyAssignedIdx = journey.days[journeyIdx].assignedIdx;
+      displayPortfolios = computeShiftedPortfolios(journey.days[journeyIdx].shift);
+      displayVoronoi = rebuildVoronoiFor(displayPortfolios).voronoi;
+    }
+
     ctx.clearRect(0, 0, W, H);
 
     // cell fills — one true polygon per portfolio, not a pixel raster
-    portfolios.forEach(function (p) {
-      var dim = (activeCell !== null && activeCell !== p.id);
+    displayPortfolios.forEach(function (p) {
+      var dim = inJourney ? (journeyAssignedIdx !== p.id) : (activeCell !== null && activeCell !== p.id);
       ctx.beginPath();
-      voronoi.renderCell(p.id, ctx);
+      displayVoronoi.renderCell(p.id, ctx);
       ctx.fillStyle = resolveColor(p.cssVar);
       ctx.globalAlpha = dim ? 0.10 : 0.30;
       ctx.fill();
@@ -491,7 +725,7 @@
 
     // cell boundaries — the actual Voronoi edge mesh
     ctx.beginPath();
-    voronoi.render(ctx);
+    displayVoronoi.render(ctx);
     ctx.strokeStyle = resolveColor('--ink');
     ctx.globalAlpha = 0.55;
     ctx.lineWidth = 1.25;
@@ -499,7 +733,7 @@
     ctx.globalAlpha = 1;
 
     drawAxes();
-    drawSeeds();
+    drawSeeds(displayPortfolios);
     drawClients();
   }
 
@@ -533,10 +767,12 @@
     ctx.restore();
   }
 
-  function drawSeeds() {
-    portfolios.forEach(function (p) {
+  function drawSeeds(displayPortfolios) {
+    var inJourney = journey && journey.days.length > 0;
+    var journeyAssignedIdx = inJourney ? journey.days[journeyIdx].assignedIdx : null;
+    (displayPortfolios || portfolios).forEach(function (p) {
       var pt = toPx(p.risk, p.horizon);
-      var dim = (activeCell !== null && activeCell !== p.id);
+      var dim = inJourney ? (journeyAssignedIdx !== p.id) : (activeCell !== null && activeCell !== p.id);
       var isDragging = (dragging === p);
       var radius = isDragging ? 9.5 : 7;
       ctx.globalAlpha = dim ? 0.3 : 1;
@@ -557,18 +793,23 @@
   }
 
   function drawClients() {
+    var inJourney = journey && journey.days.length > 0;
+    var selectedId = inJourney ? journey.client.id : null;
+    var journeyAssignedIdx = inJourney ? journey.days[journeyIdx].assignedIdx : null;
     clients.forEach(function (c) {
+      var isSelected = inJourney && c.id === selectedId;
       var pt = toPx(c.risk, c.horizon);
-      var p = portfolios[c.cell];
-      var dim = (activeCell !== null && activeCell !== c.cell);
-      ctx.globalAlpha = dim ? 0.12 : 0.9;
+      var p = isSelected ? portfolios[journeyAssignedIdx] : portfolios[c.cell];
+      var dim = inJourney ? !isSelected : (activeCell !== null && activeCell !== c.cell);
+      var radius = isSelected ? 5.5 : (c.contestable ? 3.4 : 2.6);
+      ctx.globalAlpha = dim ? (inJourney ? 0.05 : 0.12) : 0.9;
       ctx.beginPath();
-      ctx.arc(pt[0], pt[1], c.contestable ? 3.4 : 2.6, 0, Math.PI * 2);
+      ctx.arc(pt[0], pt[1], radius, 0, Math.PI * 2);
       ctx.fillStyle = resolveColor(p.cssVar);
       ctx.fill();
-      if (c.contestable && !dim) {
-        ctx.lineWidth = 1.2;
-        ctx.strokeStyle = resolveColor('--paper');
+      if ((c.contestable && !dim && !isSelected) || isSelected) {
+        ctx.lineWidth = isSelected ? 1.8 : 1.2;
+        ctx.strokeStyle = resolveColor(isSelected ? '--ink' : '--paper');
         ctx.stroke();
       }
       ctx.globalAlpha = 1;
@@ -578,7 +819,11 @@
   drawVoronoi();
 
   // redraw on theme toggle (data-theme attr changes) and OS scheme change
-  function redrawForTheme() { drawVoronoi(); renderReassignmentMatrix(); }
+  function redrawForTheme() {
+    drawVoronoi();
+    renderReassignmentMatrix();
+    if (journey) { drawJourneyStrip(); if (journey.hasReturns) drawJourneyChart(); }
+  }
   var mo = new MutationObserver(redrawForTheme);
   mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   if (window.matchMedia) {
@@ -594,6 +839,16 @@
     return { sx: canvas.width / rect.width, sy: canvas.height / rect.height, rect: rect };
   }
 
+  function clientAt(mx, my) {
+    var closest = null, closestD = Infinity;
+    clients.forEach(function (c) {
+      var pt = toPx(c.risk, c.horizon);
+      var d = (pt[0] - mx) * (pt[0] - mx) + (pt[1] - my) * (pt[1] - my);
+      if (d < closestD) { closestD = d; closest = c; }
+    });
+    return (closest && closestD < 14 * 14) ? closest : null;
+  }
+
   canvas.addEventListener("mousemove", function (e) {
     if (dragging) return; // the drag handler below owns the tooltip/cursor while active
 
@@ -604,34 +859,30 @@
     var hoverSeed = seedAt(mx, my);
     canvas.style.cursor = hoverSeed ? "grab" : "crosshair";
     if (hoverSeed) {
-      var spt = toPx(hoverSeed.risk, hoverSeed.horizon);
+      var displayRisk = clamp(hoverSeed.baseRisk + currentDisplayShift(), DOMAIN_X[0], DOMAIN_X[1]);
+      var spt = toPx(displayRisk, hoverSeed.horizon);
       tooltip.style.left = (spt[0] / s.sx) + "px";
       tooltip.style.top = (spt[1] / s.sy) + "px";
       tooltip.innerHTML =
         "<span class=\"tt-tag\">" + hoverSeed.name + "</span><br>" +
-        "risk " + hoverSeed.risk.toFixed(0) + " · horizon " + hoverSeed.horizon.toFixed(1) + "y<br>" +
+        "risk " + displayRisk.toFixed(0) + " · horizon " + hoverSeed.horizon.toFixed(1) + "y<br>" +
         "drag to reposition";
       tooltip.classList.add("visible");
       return;
     }
 
-    var closest = null, closestD = Infinity;
-    clients.forEach(function (c) {
-      var pt = toPx(c.risk, c.horizon);
-      var d = (pt[0] - mx) * (pt[0] - mx) + (pt[1] - my) * (pt[1] - my);
-      if (d < closestD) { closestD = d; closest = c; }
-    });
-    if (closest && closestD < 14 * 14) {
+    var closest = clientAt(mx, my);
+    if (closest) {
       var p = portfolios[closest.cell];
       var pt = toPx(closest.risk, closest.horizon);
-      var rect = canvas.getBoundingClientRect();
       tooltip.style.left = (pt[0] / s.sx) + "px";
       tooltip.style.top = (pt[1] / s.sy) + "px";
       tooltip.innerHTML =
         "client #" + String(closest.id).padStart(3, "0") + "<br>" +
         "risk " + closest.risk.toFixed(0) + " · horizon " + closest.horizon.toFixed(1) + "y<br>" +
         "<span class=\"tt-tag\">→ " + p.name + "</span>" +
-        (closest.contestable ? "<br><span class=\"tt-blend\">" + blendLabel(closest) + "</span>" : "");
+        (closest.contestable ? "<br><span class=\"tt-blend\">" + blendLabel(closest) + "</span>" : "") +
+        "<br><span class=\"tt-blend\">click to follow journey</span>";
       tooltip.classList.add("visible");
     } else {
       tooltip.classList.remove("visible");
@@ -643,7 +894,6 @@
 
   // ---------- sidebar cards ----------
   var cardsEl = document.getElementById("cards");
-  var allocKeys = [["equity", "eq"], ["bond", "bd"], ["cash", "ca"], ["alt", "alt"]];
 
   function renderCards() {
     cardsEl.innerHTML = "";
@@ -808,9 +1058,10 @@
   var dragging = null;
 
   function seedAt(mx, my) {
+    var shift = currentDisplayShift();
     var best = null, bestD = Infinity;
     portfolios.forEach(function (p) {
-      var pt = toPx(p.risk, p.horizon);
+      var pt = toPx(clamp(p.baseRisk + shift, DOMAIN_X[0], DOMAIN_X[1]), p.horizon);
       var d = (pt[0] - mx) * (pt[0] - mx) + (pt[1] - my) * (pt[1] - my);
       if (d < bestD) { bestD = d; best = p; }
     });
@@ -824,8 +1075,17 @@
     renderCards();
     renderLedger();
     renderReassignmentMatrix();
+    // a seed moving changes the geometry a journey was built against --
+    // rebuild it so the timeline/chart/stats stay consistent with the drag
+    if (journey) {
+      journey = buildJourney(journey.client);
+      journeyIdx = Math.min(journeyIdx, Math.max(0, journey.days.length - 1));
+      renderJourneyPanel();
+    }
     drawVoronoi();
   }
+
+  var didDrag = false;
 
   canvas.addEventListener("mousedown", function (e) {
     var s = canvasScale();
@@ -834,6 +1094,7 @@
     var hit = seedAt(mx, my);
     if (hit) {
       dragging = hit;
+      didDrag = false;
       canvas.style.cursor = "grabbing";
       tooltip.classList.remove("visible");
       e.preventDefault();
@@ -842,6 +1103,7 @@
 
   window.addEventListener("mousemove", function (e) {
     if (!dragging) return;
+    didDrag = true;
     var s = canvasScale();
     var mx = (e.clientX - s.rect.left) * s.sx;
     var my = (e.clientY - s.rect.top) * s.sy;
@@ -851,7 +1113,7 @@
     // under the shift you're looking at, and other overlays keep shifting
     // relative to the new neutral spot -- otherwise the next overlay click
     // would silently snap the seed back to its pre-drag position.
-    var currentShift = REGIME_OVERLAYS[selectedOverlayIdx].shift;
+    var currentShift = currentDisplayShift();
     dragging.baseRisk = clamp(v[0] - currentShift, DOMAIN_X[0], DOMAIN_X[1]);
     dragging.risk = v[0];
     dragging.horizon = v[1];
@@ -873,6 +1135,187 @@
     tooltip.classList.remove("visible");
   });
 
+  // ---------- client selection: click a client dot to open their journey ----------
+  canvas.addEventListener("click", function (e) {
+    if (didDrag) { didDrag = false; return; } // click fires right after a drag's mouseup -- ignore it
+    var s = canvasScale();
+    var mx = (e.clientX - s.rect.left) * s.sx;
+    var my = (e.clientY - s.rect.top) * s.sy;
+    if (seedAt(mx, my)) return; // clicking a seed is for dragging, not journey selection
+    var c = clientAt(mx, my);
+    if (c) {
+      selectClient(c.id);
+    } else if (journey) {
+      closeJourney();
+    }
+  });
+
+  // ---------- client journey panel ----------
+  var journeyPanelEl = document.getElementById("journeyPanel");
+  var journeyClientIdEl = document.getElementById("journeyClientId");
+  var journeyStripEl = document.getElementById("journeyStrip");
+  var journeyStripCtx = journeyStripEl.getContext("2d");
+  var journeyScrubberEl = document.getElementById("journeyScrubber");
+  var journeyPlayBtnEl = document.getElementById("journeyPlayBtn");
+  var journeyDateEl = document.getElementById("journeyDate");
+  var journeyCurrentEl = document.getElementById("journeyCurrent");
+  var journeyStatsEl = document.getElementById("journeyStats");
+  var journeyChartWrapEl = document.getElementById("journeyChartWrap");
+  var journeyChartEl = document.getElementById("journeyChart");
+  var journeyChartCtx = journeyChartEl.getContext("2d");
+
+  function selectClient(id) {
+    if (journey && journey.client.id === id) { closeJourney(); return; }
+    var client = clients.filter(function (c) { return c.id === id; })[0];
+    if (!client) return;
+    stopJourneyPlayback();
+    journey = buildJourney(client);
+    journeyIdx = Math.max(0, journey.days.length - 1); // default to the most recent real trading day
+    renderJourneyPanel();
+  }
+
+  function closeJourney() {
+    stopJourneyPlayback();
+    journey = null;
+    journeyPanelEl.hidden = true;
+    // a drag while journey was open leaves portfolios[].risk holding the
+    // journey day's shift, not the selected overlay chip's -- re-applying
+    // the current overlay resyncs it (and the ledger/cards) cleanly
+    applyOverlay(selectedOverlayIdx);
+  }
+
+  function stopJourneyPlayback() {
+    journeyPlaying = false;
+    if (journeyTimer) { clearInterval(journeyTimer); journeyTimer = null; }
+    journeyPlayBtnEl.textContent = "play";
+  }
+
+  function drawJourneyStrip() {
+    if (!journey || !journey.days.length) return;
+    var w = journeyStripEl.clientWidth || 600;
+    journeyStripEl.width = w;
+    var h = journeyStripEl.height;
+    var c2 = journeyStripCtx;
+    c2.clearRect(0, 0, w, h);
+    var days = journey.days;
+    var n = days.length;
+    var barW = w / n;
+    days.forEach(function (d, i) {
+      c2.fillStyle = resolveColor(portfolios[d.assignedIdx].cssVar);
+      c2.fillRect(i * barW, 0, Math.ceil(barW) + 0.5, h);
+    });
+    var x = (journeyIdx / Math.max(1, n - 1)) * w;
+    c2.strokeStyle = resolveColor('--ink');
+    c2.lineWidth = 2;
+    c2.beginPath();
+    c2.moveTo(x, 0);
+    c2.lineTo(x, h);
+    c2.stroke();
+  }
+
+  function drawJourneyChart() {
+    if (!journey || !journey.hasReturns) return;
+    var w = journeyChartEl.clientWidth || 600;
+    var h = journeyChartEl.height;
+    journeyChartEl.width = w;
+    var c2 = journeyChartCtx;
+    c2.clearRect(0, 0, w, h);
+    var days = journey.days;
+    var n = days.length;
+    if (n < 2) return;
+    var allVals = [];
+    days.forEach(function (d) { allVals.push(d.staticValue, d.adaptiveValue); });
+    var minV = Math.min.apply(null, allVals), maxV = Math.max.apply(null, allVals);
+    var pad = 6;
+    function y(v) { return h - pad - ((v - minV) / (maxV - minV || 1)) * (h - pad * 2); }
+    function x(i) { return (i / (n - 1)) * w; }
+    function drawLine(key, color) {
+      c2.beginPath();
+      days.forEach(function (d, i) {
+        var px = x(i), py = y(d[key]);
+        if (i === 0) c2.moveTo(px, py); else c2.lineTo(px, py);
+      });
+      c2.strokeStyle = color;
+      c2.lineWidth = 1.5;
+      c2.stroke();
+    }
+    drawLine("staticValue", resolveColor('--ink-soft'));
+    drawLine("adaptiveValue", resolveColor('--accent'));
+  }
+
+  function scrubTo(idx) {
+    if (!journey || !journey.days.length) return;
+    journeyIdx = clamp(idx, 0, journey.days.length - 1);
+    var d = journey.days[journeyIdx];
+    journeyDateEl.textContent = d.date + " · " + d.regimeName;
+    journeyCurrentEl.textContent = "→ " + portfolios[d.assignedIdx].name +
+      (d.assignedIdx !== journey.homeIdx ? " (reassigned)" : " (home)");
+    drawJourneyStrip();
+    drawVoronoi();
+  }
+
+  function renderJourneyPanel() {
+    if (!journey) { journeyPanelEl.hidden = true; return; }
+    journeyPanelEl.hidden = false;
+    journeyClientIdEl.textContent = String(journey.client.id).padStart(3, "0");
+    var n = journey.days.length;
+    journeyScrubberEl.min = 0;
+    journeyScrubberEl.max = Math.max(0, n - 1);
+    journeyScrubberEl.value = journeyIdx;
+
+    journeyStatsEl.innerHTML = "";
+    var statsData = [
+      ["home portfolio", portfolios[journey.homeIdx].name, null],
+      ["days reassigned", journey.reassignedDays + " / " + n + " (" + journey.reassignedPct + "%)",
+        "days this client was nearest to a different portfolio than their neutral-regime home, over " + n + " real trading days"],
+      ["portfolios visited", journey.distinctVisited + " of 6", null],
+      ["longest stint", journey.longestStint + " days", "longest unbroken run in a single portfolio"]
+    ];
+    if (journey.hasReturns) {
+      statsData.push([
+        "reassignment edge",
+        (journey.edgePts >= 0 ? "+" : "") + journey.edgePts.toFixed(1) + "pt",
+        "adaptive (reassigned daily by the real classified regime) vs. static (home alloc, buy & hold) " +
+          "total return, real SPY/AGG/GLD/BIL/VNQ returns"
+      ]);
+    }
+    statsData.forEach(function (row) {
+      var cell = document.createElement("div");
+      cell.className = "ledger-cell";
+      cell.innerHTML = '<div class="ledger-label">' + row[0] + '</div><div class="ledger-value">' + row[1] + '</div>' +
+        (row[2] ? '<div class="ledger-desc">' + row[2] + '</div>' : '');
+      journeyStatsEl.appendChild(cell);
+    });
+
+    journeyChartWrapEl.style.display = journey.hasReturns ? "" : "none";
+    if (journey.hasReturns) drawJourneyChart();
+
+    scrubTo(journeyIdx); // updates date/current label, strip playhead, and morphs the main canvas
+  }
+
+  journeyStripEl.addEventListener("click", function (e) {
+    if (!journey || !journey.days.length) return;
+    var rect = journeyStripEl.getBoundingClientRect();
+    var frac = clamp((e.clientX - rect.left) / rect.width, 0, 1);
+    scrubTo(Math.round(frac * (journey.days.length - 1)));
+  });
+  journeyScrubberEl.addEventListener("input", function () {
+    scrubTo(Number(journeyScrubberEl.value));
+  });
+  journeyPlayBtnEl.addEventListener("click", function () {
+    if (!journey || !journey.days.length) return;
+    if (journeyPlaying) { stopJourneyPlayback(); return; }
+    journeyPlaying = true;
+    journeyPlayBtnEl.textContent = "pause";
+    if (journeyIdx >= journey.days.length - 1) journeyIdx = 0;
+    journeyTimer = setInterval(function () {
+      var next = journeyIdx + 1;
+      if (next >= journey.days.length) { stopJourneyPlayback(); return; }
+      scrubTo(next);
+    }, 20);
+  });
+  document.getElementById("journeyCloseBtn").addEventListener("click", closeJourney);
+
   // ---------- data provenance ----------
   var footerNoteEl = document.getElementById("footerNote");
   if (liveRegimeName) {
@@ -880,6 +1323,7 @@
       "(as of " + liveRegimeAsOf + ") from data/regime-data.js" +
       (window.RETURNS_BACKTEST_SUMMARY ? " · regime tilt backtest uses real SPY/AGG/GLD/BIL returns (Yahoo Finance), see docs/RETURNS_BACKTEST.md" : "") +
       (window.ROBO_RETURNS_BACKTEST_SUMMARY ? " · portfolio tilt backtest uses real SPY/AGG/VNQ/BIL returns (Yahoo Finance), see docs/ROBO_RETURNS_BACKTEST.md" : "") +
+      (returnsByDate ? " · client journeys walk every real trading day since " + regimeTimeline[0].date + ", regime and returns both real" : " · client journeys walk every real regime day since " + regimeTimeline[0].date) +
       " · Voronoi cells computed as true polygons via d3-delaunay";
   }
 

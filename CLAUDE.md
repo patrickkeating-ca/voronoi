@@ -22,6 +22,15 @@ ideas. `index.html` is a landing page linking both:
   portfolio; a ledger stat surfaces "fragile" clients (3+ distinct
   portfolios across the six overlays). A second ledger stat backtests the
   portfolios' own `equity/bond/cash/alt` alloc against real returns.
+  Clicking any client dot opens **client journey mode**: a scrubbable
+  timeline over every real historical trading day in `data/regime-data.js`,
+  morphing the main Voronoi map to that day's real classified-regime
+  overlay and showing which portfolio the client would've been nearest to.
+  When `data/returns-data.js` is loaded it also plots a real static
+  (buy-and-hold home alloc) vs. adaptive (reassigned daily) equity curve
+  for that specific client, generalizing the per-day math in
+  `scripts/backtest-robo-returns.js` from the 6 seed-representative clients
+  to any of the 320.
 - **`voronoi-regime.html`** — market regime classification over VIX × 10Y-2Y
   yield curve slope. Six regimes are seeds; each trading day is classified
   to the nearest one. Uses real FRED data when available (`data/regime-data.js`),
@@ -50,8 +59,8 @@ scripts/backtest-returns.js   regime-tilt return backtest, reads data/regime-dat
 scripts/backtest-robo-returns.js  robo portfolio-alloc return backtest, writes
                               robo-returns-backtest-summary.*
 data/                         gitignored output of the fetch/backtest scripts, except
-                              regime-data.js, returns-backtest-summary.js, and
-                              robo-returns-backtest-summary.js (committed real-data
+                              regime-data.js, returns-data.js, returns-backtest-summary.js,
+                              and robo-returns-backtest-summary.js (committed real-data
                               snapshots)
 scripts/check-inline-scripts.js  syntax-checks both HTML files' inline <script> blocks
 docs/BACKTEST.md              classifier backtest findings / known limitations
@@ -137,6 +146,11 @@ added later, or LAN testing.
   exception to the FRED-only pipeline above, because FRED no longer carries
   a spot gold price series. If that endpoint ever breaks, this is the only
   script that needs fixing; nothing else in the repo depends on it.
+  `data/returns-data.js` (unlike `returns-data.json`) is committed on
+  purpose, same reasoning as `regime-data.js` — it's what lets
+  `voronoi-robo.html`'s client journey mode compute a real equity curve for
+  any client entirely client-side, with no backend to fetch from on the
+  live GitHub Pages demo.
 - `scripts/backtest-returns.js` duplicates `voronoi-regime.html`'s regime
   seeds/tilts (same pattern as `backtest.js` duplicating the classifier) to
   simulate a static buy-and-hold portfolio against one rebalanced daily to
@@ -160,7 +174,8 @@ added later, or LAN testing.
   regime-tilt backtest's.
 - `.github/workflows/refresh-data.yml` also reruns `fetch-returns-data.js`,
   `backtest-returns.js`, and `backtest-robo-returns.js` daily and commits
-  their `*-summary.js` snapshots if changed, alongside `regime-data.js`.
+  `returns-data.js` and both `*-summary.js` snapshots if changed, alongside
+  `regime-data.js`.
 
 ## Cross-file coupling
 
