@@ -296,7 +296,6 @@
           <span class="journey-date" id="journeyDate"></span>
           <span class="journey-current" id="journeyCurrent"></span>
         </div>
-        <div class="ledger journey-stats" id="journeyStats"></div>
         <div class="journey-chart-wrap" id="journeyChartWrap">
           <canvas id="journeyChart" class="journey-chart" height="120"></canvas>
           <div class="journey-chart-legend" id="journeyChartLegend">
@@ -304,6 +303,7 @@
             <span class="lg-adaptive">adaptive (reassigned by real regime)</span>
           </div>
         </div>
+        <div class="ledger journey-stats" id="journeyStats"></div>
       </div>
     </div>
 
@@ -1323,6 +1323,22 @@
     }
     drawLine("staticValue", resolveColor('--ink-soft'));
     drawLine("adaptiveValue", resolveColor('--accent'));
+
+    // playhead -- same day index, same x-position formula as the strip's
+    // playhead above, so the two visually share one cursor across history
+    var px = x(journeyIdx);
+    c2.strokeStyle = resolveColor('--ink');
+    c2.lineWidth = 2;
+    c2.beginPath();
+    c2.moveTo(px, 0);
+    c2.lineTo(px, h);
+    c2.stroke();
+    [["staticValue", resolveColor('--ink-soft')], ["adaptiveValue", resolveColor('--accent')]].forEach(function (pair) {
+      c2.beginPath();
+      c2.arc(px, y(days[journeyIdx][pair[0]]), 3, 0, Math.PI * 2);
+      c2.fillStyle = pair[1];
+      c2.fill();
+    });
   }
 
   function scrubTo(idx) {
@@ -1338,6 +1354,7 @@
     // thumb frozen before this fix)
     journeyScrubberEl.value = journeyIdx;
     drawJourneyStrip();
+    if (journey.hasReturns) drawJourneyChart();
     drawVoronoi();
   }
 
