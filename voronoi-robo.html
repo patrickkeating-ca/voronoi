@@ -86,6 +86,33 @@
     outline-offset: 2px;
   }
 
+  /* Map head: hint + debug jump-to-client */
+  .map-head-right {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .jump-client {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .jump-client input {
+    width: 4.5rem;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    padding: 0.25rem 0.4rem;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: var(--paper);
+    color: var(--ink);
+  }
+  .jump-client input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
   /* Client journey panel */
   .journey-panel {
     background: var(--card-bg);
@@ -242,7 +269,13 @@
       </div>
       <div class="map-panel-head">
         <h2>Risk tolerance × time horizon</h2>
-        <span class="map-note" id="hoverHint">hover a dot · click a portfolio to isolate · click a client to follow their journey</span>
+        <div class="map-head-right">
+          <span class="map-note" id="hoverHint">hover a dot · click a portfolio to isolate · click a client to follow their journey</span>
+          <span class="jump-client">
+            <input type="number" id="jumpClientInput" min="0" max="319" placeholder="client #" aria-label="Jump to client by number">
+            <button class="reset-btn" id="jumpClientBtn">go</button>
+          </span>
+        </div>
       </div>
       <div class="canvas-shell">
         <canvas id="map" width="900" height="620"></canvas>
@@ -656,8 +689,18 @@
     return [clamp(risk, DOMAIN_X[0], DOMAIN_X[1]), clamp(horizon, DOMAIN_Y[0], DOMAIN_Y[1])];
   }
 
+  // getComputedStyle forces a style recalc -- drawClients() alone calls this
+  // once per client (320x) every redraw, which is the main source of jank
+  // during journey playback (60fps x 320+ getComputedStyle calls/frame).
+  // The handful of CSS custom properties in play only change on theme
+  // toggle, so cache resolved values and invalidate the cache there.
+  var colorCache = {};
   function resolveColor(varName) {
-    return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+    var cached = colorCache[varName];
+    if (cached) return cached;
+    var v = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+    colorCache[varName] = v;
+    return v;
   }
 
   var activeCell = null; // null = show all
@@ -820,6 +863,7 @@
 
   // redraw on theme toggle (data-theme attr changes) and OS scheme change
   function redrawForTheme() {
+    colorCache = {};
     drawVoronoi();
     renderReassignmentMatrix();
     if (journey) { drawJourneyStrip(); if (journey.hasReturns) drawJourneyChart(); }
@@ -1186,14 +1230,53 @@
 
   function stopJourneyPlayback() {
     journeyPlaying = false;
-    if (journeyTimer) { clearInterval(journeyTimer); journeyTimer = null; }
+    if (journeyTimer) { cancelAnimationFrame(journeyTimer); journeyTimer = null; }
     journeyPlayBtnEl.textContent = "play";
+  }
+
+  // requestAnimationFrame timed by elapsed real time, rather than a plain
+  // setInterval -- setInterval fires on its own schedule and competes with
+  // the browser's paint cycle instead of being scheduled with it, which is
+  // what made playback look stuttery.
+  var JOURNEY_MS_PER_DAY = 20;
+  function startJourneyPlayback() {
+    if (!journey || !journey.days.length) return;
+    journeyPlaying = true;
+    journeyPlayBtnEl.textContent = "pause";
+    if (journeyIdx >= journey.days.length - 1) journeyIdx = 0;
+    var lastT = null, acc = 0;
+    function tick(t) {
+      if (!journeyPlaying) return;
+      if (lastT === null) lastT = t;
+      acc += t - lastT;
+      lastT = t;
+      var steps = Math.floor(acc / JOURNEY_MS_PER_DAY);
+      if (steps > 0) {
+        acc -= steps * JOURNEY_MS_PER_DAY;
+        var next = journeyIdx + steps;
+        if (next >= journey.days.length) { scrubTo(journey.days.length - 1); stopJourneyPlayback(); return; }
+        scrubTo(next);
+      }
+      journeyTimer = requestAnimationFrame(tick);
+    }
+    journeyTimer = requestAnimationFrame(tick);
+  }
+
+  // canvas.width assignment clears *and* forces a layout reflow -- only do
+  // it when the size actually needs to change (panel open, window resize),
+  // never on every scrub/playback tick.
+  function sizeJourneyCanvases() {
+    var sw = journeyStripEl.clientWidth || 600;
+    if (journeyStripEl.width !== sw) journeyStripEl.width = sw;
+    if (journey && journey.hasReturns) {
+      var cw = journeyChartEl.clientWidth || 600;
+      if (journeyChartEl.width !== cw) journeyChartEl.width = cw;
+    }
   }
 
   function drawJourneyStrip() {
     if (!journey || !journey.days.length) return;
-    var w = journeyStripEl.clientWidth || 600;
-    journeyStripEl.width = w;
+    var w = journeyStripEl.width;
     var h = journeyStripEl.height;
     var c2 = journeyStripCtx;
     c2.clearRect(0, 0, w, h);
@@ -1215,9 +1298,8 @@
 
   function drawJourneyChart() {
     if (!journey || !journey.hasReturns) return;
-    var w = journeyChartEl.clientWidth || 600;
+    var w = journeyChartEl.width;
     var h = journeyChartEl.height;
-    journeyChartEl.width = w;
     var c2 = journeyChartCtx;
     c2.clearRect(0, 0, w, h);
     var days = journey.days;
@@ -1250,6 +1332,11 @@
     journeyDateEl.textContent = d.date + " · " + d.regimeName;
     journeyCurrentEl.textContent = "→ " + portfolios[d.assignedIdx].name +
       (d.assignedIdx !== journey.homeIdx ? " (reassigned)" : " (home)");
+    // keep the visible slider thumb in sync -- setting .value programmatically
+    // doesn't re-fire 'input', so this is safe to call from scrubTo itself
+    // (including during rAF-driven playback, which was silently leaving the
+    // thumb frozen before this fix)
+    journeyScrubberEl.value = journeyIdx;
     drawJourneyStrip();
     drawVoronoi();
   }
@@ -1288,6 +1375,7 @@
     });
 
     journeyChartWrapEl.style.display = journey.hasReturns ? "" : "none";
+    sizeJourneyCanvases();
     if (journey.hasReturns) drawJourneyChart();
 
     scrubTo(journeyIdx); // updates date/current label, strip playhead, and morphs the main canvas
@@ -1304,17 +1392,28 @@
   });
   journeyPlayBtnEl.addEventListener("click", function () {
     if (!journey || !journey.days.length) return;
-    if (journeyPlaying) { stopJourneyPlayback(); return; }
-    journeyPlaying = true;
-    journeyPlayBtnEl.textContent = "pause";
-    if (journeyIdx >= journey.days.length - 1) journeyIdx = 0;
-    journeyTimer = setInterval(function () {
-      var next = journeyIdx + 1;
-      if (next >= journey.days.length) { stopJourneyPlayback(); return; }
-      scrubTo(next);
-    }, 20);
+    if (journeyPlaying) { stopJourneyPlayback(); return; } else { startJourneyPlayback(); }
   });
   document.getElementById("journeyCloseBtn").addEventListener("click", closeJourney);
+
+  // ---------- debug: jump straight to a client by id ----------
+  var jumpClientInputEl = document.getElementById("jumpClientInput");
+  var jumpClientBtnEl = document.getElementById("jumpClientBtn");
+  jumpClientInputEl.max = N - 1;
+  function jumpToClient() {
+    var id = parseInt(jumpClientInputEl.value, 10);
+    if (isNaN(id) || !clients.some(function (c) { return c.id === id; })) return;
+    selectClient(id);
+  }
+  jumpClientBtnEl.addEventListener("click", jumpToClient);
+  jumpClientInputEl.addEventListener("keydown", function (e) { if (e.key === "Enter") jumpToClient(); });
+
+  window.addEventListener("resize", function () {
+    if (!journey) return;
+    sizeJourneyCanvases();
+    drawJourneyStrip();
+    if (journey.hasReturns) drawJourneyChart();
+  });
 
   // ---------- data provenance ----------
   var footerNoteEl = document.getElementById("footerNote");

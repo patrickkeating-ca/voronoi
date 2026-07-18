@@ -104,11 +104,13 @@ h1 {
 }
 .map-panel-head {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: baseline;
   margin-bottom: 0.5rem;
-  gap: 1rem;
+  gap: 0.35rem 1rem;
 }
+.map-panel-head h2 { white-space: nowrap; }
 .map-panel-head h2 {
   font-family: var(--font-body);
   font-weight: 600;
