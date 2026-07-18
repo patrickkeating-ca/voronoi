@@ -58,6 +58,9 @@ scripts/backtest-returns.js   regime-tilt return backtest, reads data/regime-dat
                               + data/returns-data.json, writes returns-backtest-summary.*
 scripts/backtest-robo-returns.js  robo portfolio-alloc return backtest, writes
                               robo-returns-backtest-summary.*
+scripts/client-stories.js     fleet-wide version of backtest-robo-returns.js -- walks all
+                              320 synthetic clients (not just the 6 seeds) through real
+                              history, backs docs/CLIENT_STORIES.md
 data/                         gitignored output of the fetch/backtest scripts, except
                               regime-data.js, returns-data.js, returns-backtest-summary.js,
                               and robo-returns-backtest-summary.js (committed real-data
@@ -66,6 +69,7 @@ scripts/check-inline-scripts.js  syntax-checks both HTML files' inline <script> 
 docs/BACKTEST.md              classifier backtest findings / known limitations
 docs/RETURNS_BACKTEST.md      regime-tilt return backtest findings / known limitations
 docs/ROBO_RETURNS_BACKTEST.md robo portfolio-alloc return backtest findings / known limitations
+docs/CLIENT_STORIES.md        plain-language write-up of specific client journey-mode findings
 .github/workflows/ci.yml      runs check-inline-scripts.js + node --check on scripts/*.js
 serve.ps1                     gitignored local-only helper (see README.md)
 ```
@@ -79,6 +83,7 @@ node scripts/backtest.js                                       # run classifier 
 node scripts/fetch-returns-data.js                              # fetch 3yr SPY/AGG/GLD/BIL/VNQ returns -> data/returns-data.{json,js}
 node scripts/backtest-returns.js                                # regime-tilt vs. static backtest, writes returns-backtest-summary.{json,js}
 node scripts/backtest-robo-returns.js                            # robo portfolio-alloc vs. static backtest, writes robo-returns-backtest-summary.{json,js}
+node scripts/client-stories.js                                   # fleet-wide (all 320 clients) version, backs docs/CLIENT_STORIES.md
 .\serve.ps1                                             # optional: npx serve + open browser (see below)
 .\serve.ps1 -Port 8080 -Page voronoi-robo.html
 ```
@@ -192,7 +197,13 @@ regimes ever change. `scripts/backtest-robo-returns.js` separately
 duplicates `voronoi-robo.html`'s `REGIME_SEEDS`, `REGIME_OVERLAYS`, and
 `portfolios`/alloc — a fifth duplicated copy overall, and the first one of
 the *robo* page's own portfolio/overlay data specifically (distinct from
-the regime-seed duplication chain above).
+the regime-seed duplication chain above). `scripts/client-stories.js`
+duplicates the same `REGIME_SEEDS`/`REGIME_OVERLAYS`/`portfolios` as
+`backtest-robo-returns.js` — a sixth duplicated copy — plus, uniquely, the
+client-generation RNG/seed (`mulberry32(20260714)`) so that client #N in
+its output is the same client #N selectable on the live page; if that RNG
+or client-count (`N = 320`) ever changes in `voronoi-robo.html`, this
+script's copy must change too or its client IDs will stop lining up.
 
 ## Theming
 
