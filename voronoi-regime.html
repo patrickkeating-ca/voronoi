@@ -145,6 +145,21 @@
       from every day-over-day transition in the plotted history above.
     </p>
     <div class="table-scroll"><div id="transitionMatrix"></div></div>
+    <p class="map-note" style="margin:0.6rem 0 0;">
+      This table is an empirical first-order Markov chain. Each diagonal cell
+      implies an expected stay of 1/(1&minus;p) trading days once in that regime
+      &mdash; shown on the regime cards as &ldquo;stays ~N days&rdquo;. Implied by
+      this matrix only: it assumes tomorrow depends on today alone (memoryless),
+      which real markets likely violate &mdash; not a forecast.
+    </p>
+    <div class="table-scroll"><div id="stationaryTable"></div></div>
+    <p class="map-note" style="margin:0.6rem 0 0;">
+      Steady-state &pi;: where the chain converges if these transition dynamics
+      ran forever. A large gap vs. the observed share means the chain hasn't
+      reached steady state in this window, or the transition probabilities
+      themselves drift over time &mdash; the single-matrix assumption is doing
+      real work here.
+    </p>
   </details>
 
   <header class="masthead">
@@ -179,8 +194,9 @@
     </div>
   </div>
 
-  <footer id="footerNote">
-    Voronoi cells computed as true polygons via d3-delaunay, run locally
+  <footer>
+    <span id="footerNote">Voronoi cells computed as true polygons via d3-delaunay, run locally</span> ·
+    <a href="https://github.com/patrickkeating-ca/voronoi/blob/main/docs/REGIME_GUIDE.md">What do these regimes mean?</a>
   </footer>
 </div>
 
@@ -718,6 +734,7 @@
 
   function renderCards() {
     cardsEl.innerHTML = "";
+    var durations = expectedDurations();
     regimes.forEach(function (r) {
       var card = document.createElement("div");
       card.className = "portfolio-card" +
@@ -737,7 +754,8 @@
         (r.id === currentRegime ? '<span class="pc-current-tag">current</span>' : '<span class="pc-count">' + counts[r.id] + ' days</span>') +
         '</div>' +
         '<div class="pc-meta">VIX ' + r.vix.toFixed(0) + ' · slope ' + (r.slope > 0 ? '+' : '') + r.slope.toFixed(2) + '%' +
-        (r.id === currentRegime ? ' · ' + counts[r.id] + ' days total' : '') + '</div>' +
+        (r.id === currentRegime ? ' · ' + counts[r.id] + ' days total' : '') +
+        ' · stays ' + (durations[r.id] === null ? '—' : '~' + durations[r.id].toFixed(1) + ' days') + '</div>' +
         '<div class="alloc-bar">' + barSpans + '</div>' +
         '<div class="alloc-legend">' +
           '<span>eq ' + r.tilt.equity + '%</span>' +
@@ -846,6 +864,74 @@
     return counts;
   }
 
+  // Expected sojourn time implied by the chain's diagonal: 1/(1-p_ii)
+  // trading days. null when the regime was never observed, or never
+  // observed leaving (p_ii === 1) — rendered as "—", not ∞.
+  function expectedDurations() {
+    var tc = computeTransitionCounts();
+    return tc.map(function (row, i) {
+      var total = row.reduce(function (a, b) { return a + b; }, 0);
+      if (!total) return null;
+      var pStay = row[i] / total;
+      if (pStay >= 1) return null;
+      return 1 / (1 - pStay);
+    });
+  }
+
+  // Stationary distribution of the empirical chain via power iteration,
+  // seeded from the observed distribution (not uniform) so a regime with
+  // zero observed days doesn't become an absorbing artifact holding 1/6
+  // of the mass. null if it fails to converge (periodic-matrix guard).
+  function stationaryDistribution() {
+    var tc = computeTransitionCounts();
+    var n = tc.length;
+    var P = tc.map(function (row, i) {
+      var total = row.reduce(function (a, b) { return a + b; }, 0);
+      if (!total) { var self = new Array(n).fill(0); self[i] = 1; return self; }
+      return row.map(function (c) { return c / total; });
+    });
+    var pi = regimes.map(function (r) { return counts[r.id] / days.length; });
+    // Sticky diagonals (p_ii ≈ 0.99) mean mass leaks out of transient
+    // regimes at ~1%/step, so hitting 1e-9 takes a few thousand steps —
+    // still instant on a 6x6.
+    for (var step = 0; step < 5000; step++) {
+      var next = new Array(n).fill(0);
+      for (var i = 0; i < n; i++) {
+        for (var j = 0; j < n; j++) next[j] += pi[i] * P[i][j];
+      }
+      var delta = 0;
+      for (var k = 0; k < n; k++) delta += Math.abs(next[k] - pi[k]);
+      pi = next;
+      if (delta < 1e-9) return pi;
+    }
+    return null;
+  }
+
+  function renderStationaryTable() {
+    var el = document.getElementById("stationaryTable");
+    var pi = stationaryDistribution();
+    var html = '<table class="matrix-table"><thead><tr><th></th>' +
+      '<th>observed</th><th>steady-state &pi;</th><th>&Delta;</th></tr></thead><tbody>';
+    regimes.forEach(function (r) {
+      var obs = 100 * counts[r.id] / days.length;
+      var rgb = hexToRgb(resolveColor(r.cssVar));
+      var piCell, deltaCell;
+      if (pi === null) {
+        piCell = "&mdash;"; deltaCell = "&mdash;";
+      } else {
+        var p = 100 * pi[r.id];
+        var d = p - obs;
+        piCell = p.toFixed(1) + "%";
+        deltaCell = (d > 0 ? "+" : "") + d.toFixed(1) + " pts";
+      }
+      html += '<tr><th title="' + r.name + '" style="border-left:3px solid rgba(' + rgb.join(",") + ',0.8);">' +
+        r.name.split(" ")[0] + '</th>' +
+        '<td>' + obs.toFixed(1) + '%</td><td>' + piCell + '</td><td>' + deltaCell + '</td></tr>';
+    });
+    html += "</tbody></table>";
+    el.innerHTML = html;
+  }
+
   function renderTransitionMatrix() {
     var counts = computeTransitionCounts();
     var rowTotals = counts.map(function (row) { return row.reduce(function (a, b) { return a + b; }, 0); });
@@ -870,6 +956,7 @@
     });
     html += "</tbody></table>";
     transitionEl.innerHTML = html;
+    renderStationaryTable();
   }
   renderTransitionMatrix();
 
