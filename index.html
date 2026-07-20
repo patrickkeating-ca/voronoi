@@ -156,11 +156,14 @@
 <body>
 <div class="wrap">
   <div class="eyebrow">Fintech &amp; Geometry</div>
-  <h1>Two ideas, one geometric trick: nearest-seed classification.</h1>
+  <h1>Nearest-neighbor classification as a lens for portfolio and regime dynamics.</h1>
   <p class="thesis">
-    Both explorations below use a Voronoi diagram — cells defined by which of a
-    handful of seed points a location is closest to — as a visual and analytical
-    device for fintech problems that are, underneath, just distance calculations.
+    Both explorations use Voronoi diagrams — cells defined by which of a handful of
+    seed points a location is closest to — as a visual and analytical device. Voronoi
+    cells partition a space based on proximity, but the real power is in what happens
+    when seeds move or data evolves: you see client reassignments in real time, and
+    can backtest regime-contingent rebalancing rules and their market-timing effects
+    across years of actual history.
   </p>
 
   <div class="grid">
@@ -201,7 +204,9 @@
 
   <footer>
     Both pages render Voronoi cells as true polygons via d3-delaunay, run
-    entirely client-side — no build step, no backend.
+    entirely client-side — no build step, no backend. Market data comes from
+    <a href="https://fred.stlouisfed.org/">FRED</a> (Federal Reserve Economic Data,
+    maintained by the Federal Reserve Bank of St. Louis).
     <a href="https://github.com/patrickkeating-ca/voronoi">Source on GitHub</a>
   </footer>
 </div>

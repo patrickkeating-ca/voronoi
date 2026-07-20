@@ -819,14 +819,27 @@
       var isDragging = (dragging === p);
       var radius = isDragging ? 9.5 : 7;
       ctx.globalAlpha = dim ? 0.3 : 1;
+
+      // glow effect for dragging seed
+      if (isDragging) {
+        ctx.shadowColor = resolveColor(p.cssVar);
+        ctx.shadowBlur = 12;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+      }
+
       ctx.beginPath();
       ctx.arc(pt[0], pt[1], radius, 0, Math.PI * 2);
       ctx.fillStyle = resolveColor(p.cssVar);
       ctx.fill();
+
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+
       ctx.lineWidth = 2;
       ctx.strokeStyle = resolveColor('--paper');
       ctx.stroke();
-      ctx.lineWidth = isDragging ? 2 : 1;
+      ctx.lineWidth = isDragging ? 2.5 : 1;
       ctx.strokeStyle = resolveColor(isDragging ? '--accent' : '--ink');
       ctx.beginPath();
       ctx.arc(pt[0], pt[1], radius, 0, Math.PI * 2);
@@ -844,15 +857,28 @@
       var pt = toPx(c.risk, c.horizon);
       var p = isSelected ? portfolios[journeyAssignedIdx] : portfolios[c.cell];
       var dim = inJourney ? !isSelected : (activeCell !== null && activeCell !== c.cell);
-      var radius = isSelected ? 5.5 : (c.contestable ? 3.4 : 2.6);
+      var radius = isSelected ? 6.5 : (c.contestable ? 3.4 : 2.6);
       ctx.globalAlpha = dim ? (inJourney ? 0.05 : 0.12) : 0.9;
+
+      // glow effect for selected client
+      if (isSelected) {
+        ctx.shadowColor = resolveColor('--accent');
+        ctx.shadowBlur = 10;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+      }
+
       ctx.beginPath();
       ctx.arc(pt[0], pt[1], radius, 0, Math.PI * 2);
       ctx.fillStyle = resolveColor(p.cssVar);
       ctx.fill();
+
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+
       if ((c.contestable && !dim && !isSelected) || isSelected) {
-        ctx.lineWidth = isSelected ? 1.8 : 1.2;
-        ctx.strokeStyle = resolveColor(isSelected ? '--ink' : '--paper');
+        ctx.lineWidth = isSelected ? 2.2 : 1.2;
+        ctx.strokeStyle = resolveColor(isSelected ? '--accent' : '--paper');
         ctx.stroke();
       }
       ctx.globalAlpha = 1;
